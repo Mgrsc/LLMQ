@@ -18,19 +18,17 @@ LLMQ 是一个基于 NoneBot2 和 OpenAI API 开发的 QQ 机器人项目，支�
 
 1. 确保系统已安装 Docker
 2. 下载项目文件
-3. 运行管理脚本： 
+3. 复制示例配置文件：
+```bash
+cp config.example.toml config.toml
+```
+4. 编辑 config.toml，填入你的配置
+5. 运行管理脚本：
 ```bash
 chmod +x manage.sh
 sudo ./manage.sh up
 ```
-
-4. 按照提示输入：
-   - QQ 机器人账号
-   - OpenAI API Key
-   - API URL（可选）
-   - 模型名称（可选）
-
-5. 扫描二维码登录 QQ
+6. 扫描二维码登录 QQ
 
 ## 📝 配置说明
 

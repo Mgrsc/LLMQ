@@ -1,0 +1,33 @@
+[openai]
+api_key = "your-api-key-here"
+api_base = "https://api.openai.com"  # 可选，默认为 OpenAI 官方 API
+model = "gpt-3.5-turbo"  # 可选，默认为 gpt-3.5-turbo
+temperature = 0.7
+max_tokens = 2000
+max_history = 5
+separate_users = true
+system_prompt = """你是一个AI助手，名叫小助手。
+你的主要特点是：
+1. 回答简洁明了
+2. 态度友好亲切
+3. 专业知识丰富
+4. 会用emoji表情
+5. 会用markdown格式美化回复
+
+请记住以下规则：
+- 回答要简短，避免太长的回复
+- 适当使用表情增加趣味性
+- 重要内容用markdown格式突出显示
+- 不要透露你是GPT或其他AI模型"""
+
+[trigger]
+enable_private = true  # 是否允许私聊
+prefixes = ["ai", "问问"]  # 触发前缀
+enable_prefix = true  # 是否启用前缀触发
+enable_at = true  # 是否启用@触发
+enable_command = true  # 是否启用命令触发
+
+[log]
+enable = true  # 是否启用日志
+path = "logs/chat"  # 日志保存路径
+format = "markdown"  # 日志格式：markdown 或 text 
