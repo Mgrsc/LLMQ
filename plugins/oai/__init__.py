@@ -420,6 +420,10 @@ empty_input_msg = message_config.get("empty_input", "请输入有效的消息内
 empty_at_msg = message_config.get("empty_at", "Hi，我在呢！有什么可以帮你的吗？")
 
 async def handle_chat_common(event: MessageEvent, msg_text: str):
+    # 检查私聊权限
+    if isinstance(event, PrivateMessageEvent) and not private_chat_enabled:
+        return "私聊功能已禁用"
+    
     # 使用新的用户标识获取函数
     user_id = get_user_id(event)
     
@@ -603,6 +607,10 @@ async def handle_clear_history(event: MessageEvent):
 if enable_at:
     @chat_at.handle()
     async def handle_chat_at(event: MessageEvent):
+        # 检查私聊权限
+        if isinstance(event, PrivateMessageEvent) and not private_chat_enabled:
+            return
+        
         msg_text = event.get_plaintext().strip()
         # 处理空@的情况
         if not msg_text:
@@ -615,6 +623,10 @@ if enable_at:
 if enable_prefix:
     @chat_prefix.handle()
     async def handle_chat_prefix(event: MessageEvent):
+        # 检查私聊权限
+        if isinstance(event, PrivateMessageEvent) and not private_chat_enabled:
+            return
+            
         msg_text = event.get_plaintext().strip()
         # 移除触发前缀
         for prefix in trigger_prefixes:
@@ -629,6 +641,10 @@ if enable_prefix:
 if enable_command:
     @chat_command.handle()
     async def handle_chat_command(event: MessageEvent):
+        # 检查私聊权限
+        if isinstance(event, PrivateMessageEvent) and not private_chat_enabled:
+            return
+            
         msg_text = str(event.get_message()).strip()
         reply = await handle_chat_common(event, msg_text)
         if reply:
