@@ -8,8 +8,6 @@ services:
       - WS_URLS=["ws://llmq:8080/onebot/v11/ws"]
       - NAPCAT_GID=0
       - NAPCAT_UID=0
-    ports:
-      - 6099:6099
     restart: always
     mac_address: 92:5E:A8:1F:C3:B4
     volumes:
@@ -27,8 +25,6 @@ services:
     volumes:
       - ./config.toml:/app/config.toml
       - ./logs:/app/logs
-    ports:
-      - "40000:8080"
     environment:
       - TZ=Asia/Shanghai
     networks:
