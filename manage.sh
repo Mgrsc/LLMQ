@@ -150,7 +150,7 @@ path = "logs/chat"
 format = "markdown"
 EOF
 
-    echo -e "${GREEN}配置文件已创建${NC}"
+    echo -e "${GREEN}��置文件已创建${NC}"
     echo -e "${YELLOW}提示：你可以在 config.toml 中修改系统提示词和其他设置${NC}"
 }
 
@@ -163,14 +163,19 @@ start_service() {
     fi
 
     echo -e "${GREEN}正在启动服务...${NC}"
-    docker-compose up -d
+    docker compose up -d
     echo -e "${GREEN}服务已启动${NC}"
+    echo -e "${YELLOW}提示：${NC}"
+    echo -e "1. 使用 ${GREEN}docker compose logs -f${NC} 查看日志和二维码"
+    echo -e "2. 扫描二维码登录后，按 Ctrl+C 退出日志查看"
+    echo -e "3. 运行 ${GREEN}docker compose down && docker compose up -d${NC} 重启服务"
+    echo -e "4. 重启后服务将自动登录"
 }
 
 # 停止服务
 stop_service() {
     echo -e "${YELLOW}正在停止服务...${NC}"
-    docker-compose down
+    docker compose down
     echo -e "${GREEN}服务已停止${NC}"
     echo -e "${YELLOW}提示：如果需要更换QQ号或重新登录，请删除 napcat 文件夹后重新启动服务${NC}"
 }
