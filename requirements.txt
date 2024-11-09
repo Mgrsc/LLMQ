@@ -1,5 +1,0 @@
-nonebot2[fastapi]
-nonebot-adapter-onebot
-httpx
-openai
-tomli 
