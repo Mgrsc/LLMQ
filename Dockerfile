@@ -23,14 +23,13 @@ ENV PATH="/app/.venv/bin:$PATH"
 COPY . /app
 
 # 使用 uv 安装依赖
-RUN uv venv
-RUN uv pip install --no-cache -r requirements.txt
+RUN uv sync --frozen --no-dev
 
 # 设置环境变量
 ENV HOST=0.0.0.0
 ENV PORT=8080
-ENV COMMAND_START=["/"]
-ENV COMMAND_SEP=["."]
+ENV COMMAND_START='["/"]'
+ENV COMMAND_SEP='["."]'
 
 # 暴露端口
 EXPOSE 8080
