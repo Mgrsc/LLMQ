@@ -35,3 +35,8 @@ format = "markdown"  # 日志格式：markdown 或 text
 [messages]
 empty_input = "请输入有效内容哦~ 🤔"
 empty_at = "Hi，我在呢！有什么可以帮你的吗？😊"
+
+[admin]
+superusers = [123456789, 987654321]  # 超级用户QQ号列表
+enable_private_chat = true  # 是否允许超级用户私聊
+enable_command = true  # 是否允许超级用户使用命令

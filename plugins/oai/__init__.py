@@ -608,8 +608,10 @@ if enable_at:
     @chat_at.handle()
     async def handle_chat_at(event: MessageEvent):
         # 检查私聊权限
-        if isinstance(event, PrivateMessageEvent) and not private_chat_enabled:
-            return
+        if isinstance(event, PrivateMessageEvent):
+            if not await check_private_chat(event):
+                await chat_at.finish("禁止私聊，加群去685618193自己部署")
+                return
         
         msg_text = event.get_plaintext().strip()
         # 处理空@的情况
@@ -624,8 +626,10 @@ if enable_prefix:
     @chat_prefix.handle()
     async def handle_chat_prefix(event: MessageEvent):
         # 检查私聊权限
-        if isinstance(event, PrivateMessageEvent) and not private_chat_enabled:
-            return
+        if isinstance(event, PrivateMessageEvent):
+            if not await check_private_chat(event):
+                await chat_prefix.finish("私聊功能已禁用")
+                return
             
         msg_text = event.get_plaintext().strip()
         # 移除触发前缀
@@ -649,3 +653,230 @@ if enable_command:
         reply = await handle_chat_common(event, msg_text)
         if reply:
             await chat_command.finish(reply)
+
+# 读取配置文件后添加
+admin_config = config.get("admin", {})
+superusers = set(admin_config.get("superusers", []))
+admin_private_chat = admin_config.get("enable_private_chat", True)
+admin_command = admin_config.get("enable_command", True)
+
+# 修改用户权限检查函数
+def is_superuser(event: MessageEvent) -> bool:
+    return event.user_id in superusers
+
+# 修改私聊权限检查
+async def check_private_chat(event: PrivateMessageEvent) -> bool:
+    is_super = is_superuser(event)
+    print(f"用户 {event.user_id} 的权限检查：是否超级用户={is_super}, admin_private_chat={admin_private_chat}, private_chat_enabled={private_chat_enabled}")
+    if is_super:
+        return admin_private_chat
+    return private_chat_enabled
+
+# 修改命令权限检查
+async def check_command_permission(event: MessageEvent) -> bool:
+    if is_superuser(event):
+        return admin_command
+    return enable_command
+
+# 修改 handle_chat_common 函数中的私聊检查部分
+async def handle_chat_common(event: MessageEvent, msg_text: str):
+    # 检查私聊权限
+    if isinstance(event, PrivateMessageEvent):
+        if not await check_private_chat(event):
+            return "私聊功能已禁用"
+    
+    # 使用新的用户标识获取函数
+    user_id = get_user_id(event)
+    
+    # 获取用户信息
+    user_name = event.sender.nickname or str(event.user_id)
+    group_id = None
+    group_name = None
+    if isinstance(event, GroupMessageEvent):
+        group_id = event.group_id
+        group_name = "未知群名"  # 如果需要真实群名，需要通过 API 获取
+    
+    try:
+        # 创建 HTTP 头部
+        headers = {
+            "Authorization": f"Bearer {openai.api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        # 准备消息历史
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        
+        # 添加历史消息（不包含 system prompt）
+        user_messages = [msg for msg in chat_history[user_id] if msg["role"] != "system"]
+        messages.extend(user_messages)
+        # 添加当前消息
+        messages.append({"role": "user", "content": msg_text})
+        
+        data = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens
+        }
+        
+        # 检查输入消息是否为空
+        if not msg_text.strip():
+            error_msg = empty_input_msg
+            await save_chat_log(
+                str(event.user_id), user_name, group_id, group_name,
+                msg_text, "", error_msg
+            )
+            return error_msg
+        
+        # 发送请求
+        import httpx
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.post(
+                    f"{openai.base_url}/v1/chat/completions",
+                    headers=headers,
+                    json=data,
+                    timeout=30.0
+                )
+            except httpx.TimeoutException:
+                error_msg = "请求超时，请稍后重试"
+                await save_chat_log(
+                    str(event.user_id), user_name, group_id, group_name,
+                    msg_text, "", error_msg
+                )
+                return error_msg
+            except httpx.NetworkError:
+                error_msg = "网络错误，请检查网络连接"
+                await save_chat_log(
+                    str(event.user_id), user_name, group_id, group_name,
+                    msg_text, "", error_msg
+                )
+                return error_msg
+            
+            if response.status_code != 200:
+                error_msg = f"API 请求失败：{response.status_code} - {response.text}"
+                await save_chat_log(
+                    str(event.user_id), user_name, group_id, group_name,
+                    msg_text, "", error_msg
+                )
+                return error_msg
+            
+            try:
+                result = response.json()
+            except json.JSONDecodeError:
+                error_msg = "API 返回的数据格式错误"
+                await save_chat_log(
+                    str(event.user_id), user_name, group_id, group_name,
+                    msg_text, "", error_msg
+                )
+                return error_msg
+            
+            # 检查返回数据的完整性
+            if not result:
+                error_msg = "API 返回空数据"
+                await save_chat_log(
+                    str(event.user_id), user_name, group_id, group_name,
+                    msg_text, "", error_msg
+                )
+                return error_msg
+                
+            if "choices" not in result or not result["choices"]:
+                error_msg = "API 返回数据不完整"
+                await save_chat_log(
+                    str(event.user_id), user_name, group_id, group_name,
+                    msg_text, "", error_msg
+                )
+                return error_msg
+            
+            # 获取回复内容并清理
+            try:
+                reply = result["choices"][0]["message"]["content"]
+                reply = clean_message(reply)  # 清理回复内容
+            except (KeyError, IndexError):
+                error_msg = "API 返回数据结构异常"
+                await save_chat_log(
+                    str(event.user_id), user_name, group_id, group_name,
+                    msg_text, "", error_msg
+                )
+                return error_msg
+            
+            # 检查回复内容
+            if not reply or not reply.strip():
+                error_msg = "API 返回空回复"
+                await save_chat_log(
+                    str(event.user_id), user_name, group_id, group_name,
+                    msg_text, "", error_msg
+                )
+                return error_msg
+            
+            # 记录成功的对话（使用清理后的回复）
+            await save_chat_log(
+                str(event.user_id), user_name, group_id, group_name,
+                msg_text, reply
+            )
+            
+            # 更新对话历史（使用清理后的回复）
+            try:
+                # 确保历史记录中包含 system prompt
+                if system_prompt and (not chat_history[user_id] or chat_history[user_id][0]["role"] != "system"):
+                    chat_history[user_id].insert(0, {"role": "system", "content": system_prompt})
+                
+                chat_history[user_id].append({"role": "user", "content": msg_text})
+                chat_history[user_id].append({"role": "assistant", "content": reply})
+                
+                # 保持历史记录在限定条数内，但保留 system prompt
+                if system_prompt:
+                    while len(chat_history[user_id]) > (max_history * 2) + 1:
+                        chat_history[user_id].pop(1)
+                        chat_history[user_id].pop(1)
+                else:
+                    while len(chat_history[user_id]) > max_history * 2:
+                        chat_history[user_id].pop(0)
+            except Exception as e:
+                print(f"更新对话历史时发生错误：{e}")
+                # 继续处理，不影响回复
+            
+            return Message(reply)  # 返回清理后的回复
+        
+    except Exception as e:
+        error_msg = f"发生未知错误：{str(e)}"
+        await save_chat_log(
+            str(event.user_id), user_name, group_id, group_name,
+            msg_text, "", error_msg
+        )
+        return error_msg
+
+# 修改命令处理器的权限
+command = on_command(
+    "oai", 
+    permission=lambda event: event.user_id in superusers, 
+    priority=5, 
+    block=True
+)
+
+# 修改聊天命令处理器
+if enable_command:
+    @chat_command.handle()
+    async def handle_chat_command(event: MessageEvent):
+        if not await check_command_permission(event):
+            await chat_command.finish("您没有使用命令的权限")
+            return
+            
+        if isinstance(event, PrivateMessageEvent) and not await check_private_chat(event):
+            await chat_command.finish("私聊功能已禁用")
+            return
+            
+        msg_text = str(event.get_message()).strip()
+        reply = await handle_chat_common(event, msg_text)
+        if reply:
+            await chat_command.finish(reply)
+
+# 修改清除历史记录命令的权限
+clear_history = on_command(
+    "clear", 
+    permission=lambda event: event.user_id in superusers, 
+    priority=10, 
+    block=True
+)
