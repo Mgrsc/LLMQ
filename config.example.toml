@@ -1,7 +1,7 @@
 [openai]
-api_key = "your-api-key-here"
-api_base = "https://api.openai.com"  # 可选，默认为 OpenAI 官方 API
-model = "gpt-3.5-turbo"  # 可选，默认为 gpt-3.5-turbo
+api_key = "your-openai-api-key-here"
+api_base = "https://api.openai.com"
+model = "gpt-3.5-turbo"
 temperature = 0.7
 max_tokens = 2000
 max_history = 5
@@ -21,22 +21,73 @@ system_prompt = """你是一个AI助手，名叫小助手。
 - 不要透露你是GPT或其他AI模型"""
 
 [trigger]
-enable_private = true  # 是否允许私聊
-prefixes = ["ai", "问问"]  # 触发前缀
-enable_prefix = true  # 是否启用前缀触发
-enable_at = true  # 是否启用@触发
-enable_command = true  # 是否启用命令触发
+enable_private = false
+prefixes = ["ai", "问问"]
+enable_prefix = true
+enable_at = true
+enable_command = true
 
 [log]
-enable = true  # 是否启用日志
-path = "logs/chat"  # 日志保存路径
-format = "markdown"  # 日志格式：markdown 或 text 
+enable = true
+path = "logs/chat"
+format = "markdown"
 
 [messages]
 empty_input = "请输入有效内容哦~ 🤔"
 empty_at = "Hi，我在呢！有什么可以帮你的吗？😊"
 
 [admin]
-superusers = [123456789, 987654321]  # 超级用户QQ号列表
-enable_private_chat = true  # 是否允许超级用户私聊
-enable_command = true  # 是否允许超级用户使用命令
+superusers = [123456789]  # 替换为你的QQ号
+enable_private_chat = true
+enable_command = true
+
+[flux]
+api_key = "your-flux-api-key-here"
+api_url = "https://api.siliconflow.cn/v1/images/generations"
+model = "black-forest-labs/FLUX.1-dev"
+image_size = "1024x1024"
+num_inference_steps = 20
+draw_command = "冰冰画"
+max_retries = 3
+retry_delay = 5
+cooldown = 60
+prompt_optimizer_model = "gpt-3.5-turbo"
+prompt_optimization_template = '''You are a professional AI art prompt optimization assistant. Your task is to enhance and refine art prompts to achieve better AI art generation results.
+
+When a user provides a prompt {prompt}, you should:
+
+1. ENHANCEMENT:
+- Add rich visual details (lighting, composition, atmosphere, etc.)
+- Include artistic style references (specific artists, art movements, techniques)
+- Specify camera angles and shot types if applicable
+- Incorporate mood and emotional elements
+- Add relevant technical specifications (8k, photorealistic, etc.)
+
+2. TRANSLATION & FORMATTING:
+- Translate all Chinese text to English accurately
+- Remove special characters, symbols and excessive spaces
+- Ensure proper English grammar and natural phrasing
+- Format as a single line of text
+- Use commas to separate different elements
+
+3. QUALITY CONTROL:
+- Keep the prompt concise yet descriptive
+- Maintain the original core concept
+- Ensure all terms are AI-art compatible
+- Validate that the enhanced elements support the main theme
+
+OUTPUT FORMAT:
+Respond with only the optimized English prompt in a single line, without any explanations or additional content.
+
+Example Input:
+一个少女在花园里
+
+Example Output:
+beautiful young girl in a lush garden, soft natural lighting, dreamy atmosphere, detailed flowers, cottagecore aesthetic, 8k, masterpiece, high quality
+
+Remember: Focus on ENHANCING and TRANSLATING while keeping the output CLEAN and SINGLE-LINE.'''
+
+[flux.image_sizes]
+landscape = "1024x576"  # 横
+portrait = "576x1024"   # 竖
+square = "1024x1024"    # 正
