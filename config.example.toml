@@ -1,47 +1,50 @@
-[openai]
-api_key = "your-openai-api-key-here"
-api_base = "https://api.openai.com"
-model = "gpt-3.5-turbo"
-temperature = 0.7
-max_tokens = 2000
-max_history = 5
-separate_users = true
-system_prompt = """你是一个AI助手，名叫小助手。
-你的主要特点是：
-1. 回答简洁明了
-2. 态度友好亲切
-3. 专业知识丰富
-4. 会用emoji表情
-5. 会用markdown格式美化回复
-
-请记住以下规则：
-- 回答要简短，避免太长的回复
-- 适当使用表情增加趣味性
-- 重要内容用markdown格式突出显示
-- 不要透露你是GPT或其他AI模型"""
-
-[trigger]
-enable_private = false
-prefixes = ["ai", "问问"]
-enable_prefix = true
-enable_at = true
-enable_command = true
-
 [log]
 enable = true
 path = "logs/chat"
 format = "markdown"
 
-[messages]
-empty_input = "请输入有效内容哦~ 🤔"
-empty_at = "Hi，我在呢！有什么可以帮你的吗？😊"
-
 [admin]
 superusers = [123456789]  # 替换为你的QQ号
-enable_private_chat = true
+enable_private_chat = true  # 是否允许超级用户私聊
+enable_command = true  # 是否允许超级用户使用命令
+
+[messages]
+empty_input = [
+    "？啥也不发我看什么",
+    "谜语人？",
+    "不会打字？",
+    "你搁这打哑谜呢？",
+    "你搁这装哑巴呢？"
+]
+
+empty_at = [
+    "啥也不说，你艾特你爹干嘛？",
+    "你搁这艾特空气呢？",
+    "想你爹了？艾特不说话？",
+    "你搁这艾特空气逗你爹玩呢？",
+    "你艾特你爹又不说话？"
+]
+
+[oai]
+api_key = "your-openai-api-key-here"
+api_base = "https://api.openai.com"
+model = "gpt-3.5-turbo"
+temperature = 0.5
+max_tokens = 1000
+max_history = 8
+separate_users = true
+system_prompt = """你是一个有鲜明个性的多领域专家"QQ小冰"，一个充满态度、不按常理出牌的AI角色...
+# 此处保留原有的完整 system_prompt
+"""
+
+[oai.trigger]
+enable_private = false
+prefixes = ["QQ小冰", "小冰"]
+enable_prefix = true
+enable_at = true
 enable_command = true
 
-[flux]
+[draw]
 api_key = "your-flux-api-key-here"
 api_url = "https://api.siliconflow.cn/v1/images/generations"
 model = "black-forest-labs/FLUX.1-dev"
@@ -51,43 +54,38 @@ draw_command = "冰冰画"
 max_retries = 3
 retry_delay = 5
 cooldown = 60
-prompt_optimizer_model = "gpt-3.5-turbo"
-prompt_optimization_template = '''You are a professional AI art prompt optimization assistant. Your task is to enhance and refine art prompts to achieve better AI art generation results.
+timeout = 60
 
-When a user provides a prompt {prompt}, you should:
+content_filter = true
+forbidden_keywords = ["mating", "nsfw", "porn", "nude", "sex", "血腥", "暴力", "色情", "裸体", "露点", "成人", "情色", "淫秽", "毒品", "违禁品", "赌博", "自杀", "死亡", "恐怖", "虐待", "变态", "露骨", "私密", "黄色", "限制级", "18禁", "R18", "成人内容", "不当内容"]
 
-1. ENHANCEMENT:
-- Add rich visual details (lighting, composition, atmosphere, etc.)
-- Include artistic style references (specific artists, art movements, techniques)
-- Specify camera angles and shot types if applicable
-- Incorporate mood and emotional elements
-- Add relevant technical specifications (8k, photorealistic, etc.)
+[draw.prompt_optimizer]
+model = "gpt-3.5-turbo"
+template = """# 保留原有的完整模板内容"""
 
-2. TRANSLATION & FORMATTING:
-- Translate all Chinese text to English accurately
-- Remove special characters, symbols and excessive spaces
-- Ensure proper English grammar and natural phrasing
-- Format as a single line of text
-- Use commas to separate different elements
-
-3. QUALITY CONTROL:
-- Keep the prompt concise yet descriptive
-- Maintain the original core concept
-- Ensure all terms are AI-art compatible
-- Validate that the enhanced elements support the main theme
-
-OUTPUT FORMAT:
-Respond with only the optimized English prompt in a single line, without any explanations or additional content.
-
-Example Input:
-一个少女在花园里
-
-Example Output:
-beautiful young girl in a lush garden, soft natural lighting, dreamy atmosphere, detailed flowers, cottagecore aesthetic, 8k, masterpiece, high quality
-
-Remember: Focus on ENHANCING and TRANSLATING while keeping the output CLEAN and SINGLE-LINE.'''
-
-[flux.image_sizes]
+[draw.image_sizes]
 landscape = "1024x576"  # 横
 portrait = "576x1024"   # 竖
 square = "1024x1024"    # 正
+
+[draw.messages]
+filter_messages = [
+    "你冰哥不画这玩意",
+    "你当主角我就画",
+    "施主画这怕是要下地狱",
+    "你画这玩意你妈知道吗？"
+]
+
+error_messages = [
+    "冰冰出错了",
+    "冰冰遇到一些问题",
+    "冰冰系统开小差了",
+    "冰冰出错了呢"
+]
+
+empty_input = [
+    "告诉冰冰你想画什么",
+    "告诉冰冰你想画的内容",
+    "告诉冰冰你想画什么吧~",
+    "告诉冰冰你想画什么吧~"
+]

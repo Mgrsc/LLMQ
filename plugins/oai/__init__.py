@@ -14,6 +14,7 @@ import os
 from typing import Optional, Set, List, Dict
 import asyncio
 import re
+import random
 
 __plugin_meta__ = PluginMetadata(
     name="OAI Chat",
@@ -42,16 +43,17 @@ if not config_file.exists():
 
 with open(config_file, "rb") as f:
     config = tomli.load(f)
-    openai_config = config["openai"]
-    trigger_config = config["trigger"]
+    oai_config = config["oai"]
+    trigger_config = oai_config["trigger"]
+    messages_config = config["messages"]
 
 # 配置 OpenAI
-openai.api_key = openai_config["api_key"]
-openai.base_url = openai_config.get("api_base", "https://api.openai.com/v1")
-model = openai_config.get("model", "gpt-3.5-turbo")
-temperature = float(openai_config.get("temperature", 0.7))
-max_tokens = int(openai_config.get("max_tokens", 2000))
-max_history = int(openai_config.get("max_history", 5))
+openai.api_key = oai_config["api_key"]
+openai.base_url = oai_config.get("api_base", "https://api.openai.com/v1")
+model = oai_config.get("model", "gpt-3.5-turbo")
+temperature = float(oai_config.get("temperature", 0.7))
+max_tokens = int(oai_config.get("max_tokens", 2000))
+max_history = int(oai_config.get("max_history", 5))
 
 # 存储配置
 enabled_groups: Set[int] = set()
@@ -62,13 +64,13 @@ enable_at: bool = trigger_config.get("enable_at", True)
 enable_command: bool = trigger_config.get("enable_command", True)
 
 # 获取系统提示语
-system_prompt = openai_config.get("system_prompt", "")
+system_prompt = oai_config.get("system_prompt", "")
 
 # 添加对话历史存储
 chat_history = defaultdict(list)
 
 # 在配置部分添加
-separate_users = openai_config.get("separate_users", True)
+separate_users = oai_config.get("separate_users", True)
 
 # 修改用户标识获取函数
 def get_user_id(event: MessageEvent) -> str:
@@ -495,7 +497,7 @@ async def handle_chat_common(event: MessageEvent, msg_text: str):
                 return error_msg
             
             if response.status_code != 200:
-                error_msg = f"API 请求失败：{response.status_code} - {response.text}"
+                error_msg = f"API 请��失败：{response.status_code} - {response.text}"
                 await save_chat_log(
                     str(event.user_id), user_name, group_id, group_name,
                     msg_text, "", error_msg
@@ -616,8 +618,15 @@ if enable_at:
         msg_text = event.get_plaintext().strip()
         # 处理空@的情况
         if not msg_text:
-            await chat_at.finish(Message(empty_at_msg))
+            # 从配置中获取空@消息列表
+            empty_at_messages = config.get("messages", {}).get("empty_at", [
+                "Hi，我在呢！有什么可以帮你的吗？😊"
+            ])
+            # 随机选择一条消息
+            random_msg = random.choice(empty_at_messages) if isinstance(empty_at_messages, list) else empty_at_messages
+            await chat_at.finish(Message(random_msg))
             return
+            
         reply = await handle_chat_common(event, msg_text)
         if reply:
             await chat_at.finish(reply)
