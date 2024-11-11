@@ -464,7 +464,14 @@ async def handle_chat_common(event: MessageEvent, msg_text: str):
         
         # 检查输入消息是否为空
         if not msg_text.strip():
-            error_msg = empty_input_msg
+            # 从配置中获取空消息列表，如果不是列表则转换为列表
+            empty_messages = messages_config.get("empty_input", ["请输入有效的消息内容"])
+            if not isinstance(empty_messages, list):
+                empty_messages = [empty_messages]
+            
+            # 随机选择一条消息
+            error_msg = random.choice(empty_messages)
+            
             await save_chat_log(
                 str(event.user_id), user_name, group_id, group_name,
                 msg_text, "", error_msg
@@ -497,7 +504,7 @@ async def handle_chat_common(event: MessageEvent, msg_text: str):
                 return error_msg
             
             if response.status_code != 200:
-                error_msg = f"API 请��失败：{response.status_code} - {response.text}"
+                error_msg = f"API 请求失败：{response.status_code} - {response.text}"
                 await save_chat_log(
                     str(event.user_id), user_name, group_id, group_name,
                     msg_text, "", error_msg
@@ -732,7 +739,14 @@ async def handle_chat_common(event: MessageEvent, msg_text: str):
         
         # 检查输入消息是否为空
         if not msg_text.strip():
-            error_msg = empty_input_msg
+            # 从配置中获取空消息列表，如果不是列表则转换为列表
+            empty_messages = messages_config.get("empty_input", ["请输入有效的消息内容"])
+            if not isinstance(empty_messages, list):
+                empty_messages = [empty_messages]
+            
+            # 随机选择一条消息
+            error_msg = random.choice(empty_messages)
+            
             await save_chat_log(
                 str(event.user_id), user_name, group_id, group_name,
                 msg_text, "", error_msg
