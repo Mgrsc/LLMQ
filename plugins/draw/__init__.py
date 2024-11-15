@@ -14,6 +14,9 @@ import random
 from nonebot.exception import FinishedException
 import json
 
+from .drawing_manager import DrawingManager
+from .services.siliconflow import SiliconFlowService
+
 __plugin_meta__ = PluginMetadata(
     name="AI绘图",
     description="使用FLUX进行AI绘图",
@@ -263,48 +266,24 @@ def check_content(prompt: str) -> bool:
             return False
     return True
 
-@retry_on_error(max_retries=3, retry_delay=2)
-async def call_api(payload: dict, headers: dict) -> httpx.Response:
-    """封装API调用"""
-    try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
-            response = await client.post(
-                API_URL,
-                json=payload,
-                headers=headers
-            )
-            if response.status_code != 200:
-                logger.error(f"API调用失败，状态码：{response.status_code}，响应：{response.text}")
-                raise Exception(f"API返回错误: {response.status_code}")
-            return response
-    except httpx.TimeoutException as e:
-        logger.error(f"API调用超时: {str(e)}")
-        raise
-    except Exception as e:
-        logger.error(f"API调用错误: {str(e)}")
-        raise
+# 初始化绘画管理器
+drawing_manager = DrawingManager()
 
-@retry_on_error(max_retries=3, retry_delay=2)
-async def download_image(url: str) -> httpx.Response:
-    """封装图片下载"""
-    try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
-            response = await client.get(url)
-            if response.status_code != 200:
-                logger.error(f"片下载失败，状态码：{response.status_code}")
-                raise Exception("图片下载失败")
-            return response
-    except httpx.TimeoutException as e:
-        logger.error(f"图片下载超时: {str(e)}")
-        raise
-    except Exception as e:
-        logger.error(f"图片下载错误: {str(e)}")
-        raise
+# 注册 Silicon Flow 服务
+silicon_flow = SiliconFlowService(
+    api_key=API_KEY,
+    api_url=API_URL,
+    model=MODEL,
+    timeout=TIMEOUT,
+    max_retries=MAX_RETRIES,
+    retry_delay=RETRY_DELAY
+)
+drawing_manager.register_service("siliconflow", silicon_flow)
 
 @draw.handle()
 async def handle_draw(event: MessageEvent):
     user_id = event.user_id
-    start_time = datetime.now()  # 开始计时
+    start_time = datetime.now()
     
     try:
         # 检查冷却时间
@@ -347,62 +326,44 @@ async def handle_draw(event: MessageEvent):
                 # 优化提示词
                 optimized_prompt = await optimize_prompt(prompt)
                 
-                # 再次检查优化后的提示词
+                # 内容检查
                 if not check_content(optimized_prompt):
                     await draw.finish(random.choice(FILTER_MESSAGES))
                     return
                 
-                # 准备请求数据
-                payload = {
-                    "model": MODEL,
-                    "prompt": optimized_prompt,
-                    "image_size": args["size"],
-                    "num_inference_steps": args["steps"]
-                }
+                # 使用绘画管理器生成图片
+                image_data, inference_time = await drawing_manager.generate_image(
+                    "siliconflow",
+                    optimized_prompt,
+                    args["size"],
+                    args["steps"]
+                )
                 
-                headers = {
-                    "Authorization": f"Bearer {API_KEY}",
-                    "Content-Type": "application/json"
-                }
-                
-                # API调用和图片处理
-                response = await call_api(payload, headers)
-                result = response.json()
-                
-                # 提取图片URL和用时
-                image_url = result["images"][0]["url"]
-                inference_time = result["timings"]["inference"]
-
-                # 下载图片
-                img_response = await download_image(image_url)
-
                 # 更新用户最后使用时间
                 last_use_time[user_id] = datetime.now()
-
+                
                 # 计算总用时
                 total_time = (datetime.now() - start_time).total_seconds()
-
-                # 构建完整消息
+                
+                # 构建消息
                 msg = Message([
-                    MessageSegment.image(img_response.content),
+                    MessageSegment.image(image_data),
                     MessageSegment.text(
                         f"\n这是你要的{prompt}\n"
                         f"优化后的提示词：{optimized_prompt}\n"
                         f"参数：{args['size']}, {args['steps']} step\n"
-                        f"总用时：{total_time:.1f}秒"  # 使用总用时替换inference_time
+                        f"总用时：{total_time:.1f}秒"
                     )
                 ])
-
+                
                 await draw.finish(msg)
                 
             except Exception as e:
-                if isinstance(e, FinishedException):
-                    return
-                logger.error(f"API调用或图片处理错误: {str(e)}")
-                await draw.finish(random.choice(ERROR_MESSAGES))
-
-    except FinishedException:
-        pass
+                if not isinstance(e, FinishedException):
+                    logger.error(f"生成图片过程中发生错误: {str(e)}", exc_info=True)
+                    await draw.finish(random.choice(ERROR_MESSAGES))
+                
     except Exception as e:
-        logger.error(f"未知错误: {str(e)}")
-        await draw.finish(random.choice(ERROR_MESSAGES))
+        if not isinstance(e, FinishedException):
+            logger.error(f"处理请求过程中发生未知错误: {str(e)}", exc_info=True)
+            await draw.finish(random.choice(ERROR_MESSAGES))
