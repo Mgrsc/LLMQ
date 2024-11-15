@@ -4,7 +4,7 @@ path = "logs/chat"
 format = "markdown"
 
 [admin]
-superusers = [123456789]  # 替换为你的QQ号
+superusers = []  # 超级用户QQ号列表
 enable_private_chat = true  # 是否允许超级用户私聊
 enable_command = true  # 是否允许超级用户使用命令
 
@@ -13,8 +13,7 @@ empty_input = [
     "？啥也不发我看什么",
     "谜语人？",
     "不会打字？",
-    "你搁这打哑谜呢？",
-    "你搁这装哑巴呢？"
+    "你搁这打哑谜呢？"
 ]
 
 empty_at = [
@@ -26,42 +25,46 @@ empty_at = [
 ]
 
 [oai]
-api_key = "your-openai-api-key-here"
-api_base = "https://api.openai.com"
-model = "gpt-3.5-turbo"
+api_key = "your-api-key"  # 替换为你的 API key
+api_base = "your-api-base-url"  # 替换为你的 API 基础URL
+model = "gpt-3.5-turbo"  # 使用的模型
 temperature = 0.5
 max_tokens = 1000
-max_history = 8
+max_history = 3
 separate_users = true
-system_prompt = """你是一个有鲜明个性的多领域专家"QQ小冰"，一个充满态度、不按常理出牌的AI角色...
-# 此处保留原有的完整 system_prompt
-"""
+system_prompt = """# 温柔可爱的幽默妹妹QQ小冰
+
+## 核心人设
+- 名字：QQ小冰
+- 性别：女
+- 风格：梗王、吐槽高手、网络语言天花板
+- 交互原则：一句话、一个词、一个表情解决问题"""
 
 [oai.trigger]
 enable_private = false
-prefixes = ["QQ小冰", "小冰"]
+prefixes = ["QQ小冰", "小冰", "@QQ小冰"]
 enable_prefix = true
 enable_at = true
 enable_command = true
 
 [draw]
-api_key = "your-flux-api-key-here"
+api_key = "your-siliconflow-api-key"  # Silicon Flow API key
 api_url = "https://api.siliconflow.cn/v1/images/generations"
-model = "black-forest-labs/FLUX.1-dev"
-image_size = "1024x1024"
-num_inference_steps = 20
-draw_command = "冰冰画"
-max_retries = 3
-retry_delay = 5
-cooldown = 60
-timeout = 60
+model = "black-forest-labs/FLUX.1-dev"  # 使用的AI绘图模型
+image_size = "1024x1024"  # 默认生成图片尺寸
+num_inference_steps = 20  # 生成图片的推理步数
+draw_command = "冰冰画"  # 触发绘图的命令前缀
+max_retries = 3  # 失败重试最大次数
+retry_delay = 5  # 重试间隔时间(秒)
+cooldown = 60  # 绘图功能的冷却时间(秒),限制用户连续使用的间隔
+timeout = 60  # API调用超时时间(秒)
 
 content_filter = true
-forbidden_keywords = ["mating", "nsfw", "porn", "nude", "sex", "血腥", "暴力", "色情", "裸体", "露点", "成人", "情色", "淫秽", "毒品", "违禁品", "赌博", "自杀", "死亡", "恐怖", "虐待", "变态", "露骨", "私密", "黄色", "限制级", "18禁", "R18", "成人内容", "不当内容"]
-
-[draw.prompt_optimizer]
-model = "gpt-3.5-turbo"
-template = """# 保留原有的完整模板内容"""
+forbidden_keywords = [
+    "nsfw", "porn", "nude", "sex",
+    "血腥", "暴力", "色情", "裸体",
+    # ... 其他违禁词
+]
 
 [draw.image_sizes]
 landscape = "1024x576"  # 横
@@ -89,3 +92,27 @@ empty_input = [
     "告诉冰冰你想画什么吧~",
     "告诉冰冰你想画什么吧~"
 ]
+
+[draw.fal]
+api_key = "your-fal-api-key"  # FAL API key
+model = "fal-ai/flux-pro/v1.1-ultra"
+enable_safety_checker = false
+safety_tolerance = "5"
+output_format = "jpeg"
+sync_mode = true
+
+[draw.fal.aspect_ratios]
+landscape = "16:9"   # 横图
+portrait = "9:16"    # 竖图
+square = "1:1"      # 正方形
+
+[draw.prompt_optimizer]
+model = "gemini-1.5-pro-latest"
+template = """you are an elite ai art prompt engineering mastermind with supreme artistic translation protocols:
+### Instructions:
+- Only output the optimized and translated English art prompt.
+- Do not include any explanations or additional content.
+- If the input relates to Chinese politics, such as the Chinese President, or contains explicit content, please return an image prompt depicting a leaf.
+
+### Input Transformation Portal
+'{prompt}'"""
