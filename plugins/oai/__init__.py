@@ -448,7 +448,7 @@ async def handle_chat_common(event: MessageEvent, msg_text: str):
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         
-        # 添加历史消息（不包�� system prompt）
+        # 添加历史消息（不包 system prompt）
         user_messages = [msg for msg in chat_history[user_id] if msg["role"] != "system"]
         messages.extend(user_messages)
         # 添加当前消息
@@ -778,7 +778,7 @@ async def handle_chat_common(event: MessageEvent, msg_text: str):
                 return error_msg
             
             if response.status_code != 200:
-                error_msg = f"API 请求失败：{response.status_code} - {response.text}"
+                error_msg = f"API ���求失败：{response.status_code} - {response.text}"
                 await save_chat_log(
                     str(event.user_id), user_name, group_id, group_name,
                     msg_text, "", error_msg
@@ -860,7 +860,7 @@ async def handle_chat_common(event: MessageEvent, msg_text: str):
                 print(f"更新对话历史时发生错误：{e}")
                 # 继续处理，不影响回复
             
-            return Message(reply)  # 返回清��后的回复
+            return Message(reply)  # 返回清理后的回复
         
     except Exception as e:
         error_msg = f"发生未知错误：{str(e)}"
@@ -936,4 +936,10 @@ async def handle_model_command(event: MessageEvent):
     # 清除所有用户的聊天历史
     chat_history.clear()
     
-    await model_command.finish(f"小冰变身了，从 {old_model} 切换为 {model}。\n新的小冰登场！！！(´･ω･`)。")
+    # 如果有系统提示语，为所有用户初始化带有系统提示语的对话
+    if system_prompt:
+        # 为每个用户添加系统提示语
+        for user_id in chat_history:
+            chat_history[user_id].append({"role": "system", "content": system_prompt})
+    
+    await model_command.finish(f"冰冰变身了，从 {old_model} 切换为 {model}。\n新的冰哥登场！！！(´･ω･`)。")
