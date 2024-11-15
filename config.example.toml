@@ -24,6 +24,7 @@ empty_at = [
     "你艾特你爹又不说话？"
 ]
 
+
 [oai]
 api_key = "your-api-key"  # 替换为你的 API key
 api_base = "your-api-base-url"  # 替换为你的 API 基础URL
@@ -91,6 +92,14 @@ empty_input = [
     "告诉冰冰你想画的内容",
     "告诉冰冰你想画什么吧~",
     "告诉冰冰你想画什么吧~"
+]
+
+drawing_start = [
+    "让冰冰想想怎么画...",
+    "冰冰正在认真画画中...",
+    "冰冰拿起画笔开始画了...",
+    "让冰冰来画一画...",
+    "冰冰正在构思中..."
 ]
 
 [draw.fal]

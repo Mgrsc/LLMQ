@@ -103,6 +103,13 @@ EMPTY_INPUT_MESSAGES = draw_messages.get("empty_input", [
     "告诉冰冰你想画什么吧~"
 ])
 
+# 在文件开头的配置读取部分添加新的消息列表
+DRAWING_START_MESSAGES = draw_messages.get("drawing_start", [
+    "让冰冰想想怎么画...",
+    "冰冰正在认真画画中...",
+    "冰冰拿起画笔开始画了..."
+])
+
 # 自定义规则：检查消息是否以画图命令开头
 def check_draw_command() -> Rule:
     async def _check_draw_command(event: MessageEvent) -> bool:
@@ -315,7 +322,7 @@ async def handle_draw(event: MessageEvent):
     start_time = datetime.now()
     
     try:
-        # 检查冷却时间
+        # 检查冷却��间
         if user_id in last_use_time:
             elapsed = datetime.now() - last_use_time[user_id]
             if elapsed.total_seconds() < COOLDOWN:
@@ -353,6 +360,9 @@ async def handle_draw(event: MessageEvent):
 
         async with drawing_lock:
             try:
+                # 发送开始绘制的提示
+                await draw.send(random.choice(DRAWING_START_MESSAGES))
+                
                 # 优化提示词
                 optimized_prompt = await optimize_prompt(prompt)
                 
