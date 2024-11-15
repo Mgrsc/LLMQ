@@ -16,6 +16,7 @@ import json
 
 from .drawing_manager import DrawingManager
 from .services.siliconflow import SiliconFlowService
+from .services.fal import FALService
 
 __plugin_meta__ = PluginMetadata(
     name="AI绘图",
@@ -73,6 +74,12 @@ SIZE_TYPE_MAP = {
     "正": "square"
 }
 
+# 修改服务类型映射
+SERVICE_TYPE_MAP = {
+    "flux1": "siliconflow",  # Silicon Flow 的 FLUX.1
+    "flux1.1": "fal"         # FAL 的 FLUX 1.1-ultra
+}
+
 # 在配置部分后添加固定的消息定义
 draw_messages = draw_config.get("messages", {})
 FILTER_MESSAGES = draw_messages.get("filter_messages", [
@@ -83,17 +90,17 @@ FILTER_MESSAGES = draw_messages.get("filter_messages", [
 ])
 
 ERROR_MESSAGES = draw_messages.get("error_messages", [
-    "出错了，稍后再试吧",
-    "遇到一些问题，待会再来哦",
-    "系统开小差了，一会再试试",
-    "哎呀，出错了呢"
+    "冰冰出错了",
+    "冰冰遇到一些问题",
+    "冰冰系统开小差了",
+    "冰冰出错了呢"
 ])
 
 EMPTY_INPUT_MESSAGES = draw_messages.get("empty_input", [
-    "请输入想要画的内容~",
-    "你想画什么呢？",
-    "说说你想画的内容吧~",
-    "画什么呢？告诉我吧~"
+    "告诉冰冰你想画什么",
+    "告诉冰冰你想画的内容",
+    "告诉冰冰你想画什么吧~",
+    "告诉冰冰你想画什么吧~"
 ])
 
 # 自定义规则：检查消息是否以画图命令开头
@@ -200,11 +207,11 @@ def parse_args(text: str) -> Tuple[str, dict]:
     # 初始化默认值
     args = {
         "size": IMAGE_SIZE,
-        "steps": NUM_INFERENCE_STEPS
+        "steps": NUM_INFERENCE_STEPS,
+        "service": "siliconflow"  # 默认使用 siliconflow
     }
     
-    # 修改正则表达式，使其更精确地匹配参数
-    pattern = r'^(.*?)(?:\s+-[sn]\s+\S+)*$'  # 先匹配整个字符串
+    pattern = r'^(.*?)(?:\s+-[snm]\s+\S+)*$'
     match = re.match(pattern, text.strip())
     
     if not match:
@@ -215,6 +222,7 @@ def parse_args(text: str) -> Tuple[str, dict]:
     # 分别匹配参数
     size_match = re.search(r'-s\s+(\S+)', text)
     steps_match = re.search(r'-n\s+(\d+)', text)
+    model_match = re.search(r'-m\s+(\S+)', text)  # 新增模型参数
     
     # 处理尺寸参数
     if size_match:
@@ -232,6 +240,13 @@ def parse_args(text: str) -> Tuple[str, dict]:
                 logger.info(f"设置生成步数为：{steps_num}")
         except ValueError:
             pass
+            
+    # 处理模型参数
+    if model_match:
+        model_type = model_match.group(1).lower()
+        if model_type in SERVICE_TYPE_MAP:
+            args["service"] = SERVICE_TYPE_MAP[model_type]
+            logger.info(f"使用模型：{args['service']}")
             
     return prompt, args
 
@@ -280,6 +295,20 @@ silicon_flow = SiliconFlowService(
 )
 drawing_manager.register_service("siliconflow", silicon_flow)
 
+fal_service = FALService(
+    api_key=draw_config["fal"]["api_key"],
+    model=draw_config["fal"]["model"],
+    enable_safety_checker=draw_config["fal"]["enable_safety_checker"],
+    safety_tolerance=draw_config["fal"]["safety_tolerance"],
+    output_format=draw_config["fal"]["output_format"],
+    sync_mode=draw_config["fal"]["sync_mode"],
+    aspect_ratios=draw_config["fal"]["aspect_ratios"],
+    timeout=TIMEOUT,
+    max_retries=MAX_RETRIES,
+    retry_delay=RETRY_DELAY
+)
+drawing_manager.register_service("fal", fal_service)
+
 @draw.handle()
 async def handle_draw(event: MessageEvent):
     user_id = event.user_id
@@ -312,7 +341,8 @@ async def handle_draw(event: MessageEvent):
                 f"{random_msg}\n"
                 "参数说明：\n"
                 "-s [横/竖/正] 指定图片方向\n"
-                "-n [步数] 指定生成步数(1-100)"
+                "-n [步数] 指定生成步数(1-100)\n"
+                "-m [flux1/flux1.1] 指定模型版本"
             )
             return
 
@@ -333,7 +363,7 @@ async def handle_draw(event: MessageEvent):
                 
                 # 使用绘画管理器生成图片
                 image_data, inference_time = await drawing_manager.generate_image(
-                    "siliconflow",
+                    args["service"],  # 使用选择的服务
                     optimized_prompt,
                     args["size"],
                     args["steps"]
