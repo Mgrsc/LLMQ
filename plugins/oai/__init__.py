@@ -3,7 +3,7 @@ from nonebot.adapters.onebot.v11 import Message, MessageEvent, GroupMessageEvent
 from nonebot.plugin import PluginMetadata
 from nonebot import get_driver
 from nonebot.rule import to_me, Rule
-from typing import Optional, Set, List
+from typing import Optional, Set, List, Dict
 import openai
 import tomli
 from pathlib import Path
@@ -11,7 +11,6 @@ from collections import defaultdict
 import json
 from datetime import datetime
 import os
-from typing import Optional, Set, List, Dict
 import asyncio
 import re
 import random
@@ -449,7 +448,7 @@ async def handle_chat_common(event: MessageEvent, msg_text: str):
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         
-        # 添加历史消息（不包含 system prompt）
+        # 添加历史消息（不包�� system prompt）
         user_messages = [msg for msg in chat_history[user_id] if msg["role"] != "system"]
         messages.extend(user_messages)
         # 添加当前消息
@@ -861,7 +860,7 @@ async def handle_chat_common(event: MessageEvent, msg_text: str):
                 print(f"更新对话历史时发生错误：{e}")
                 # 继续处理，不影响回复
             
-            return Message(reply)  # 返回清理后的回复
+            return Message(reply)  # 返回清��后的回复
         
     except Exception as e:
         error_msg = f"发生未知错误：{str(e)}"
@@ -903,3 +902,38 @@ clear_history = on_command(
     priority=10, 
     block=True
 )
+
+# 修改 model 命令处理器
+model_command = on_command(
+    "model",
+    permission=lambda event: event.user_id in superusers,
+    priority=5,
+    block=True
+)
+
+@model_command.handle()
+async def handle_model_command(event: MessageEvent):
+    global model  # 使用全局变量
+    # 获取消息文本并移除命令前缀 "/model"
+    msg_text = str(event.get_message()).strip()
+    args = msg_text.split(maxsplit=1)  # 最多分割一次
+    
+    # 如果没有参数，显示当前模型
+    if len(args) <= 1:  # 只有 "/model" 没有参数
+        await model_command.finish(f"""当前模型：{model}
+
+使用方法：
+/model <模型名称>  - 切换到指定模型""")
+        return
+    
+    # 获取新模型名称（去除命令部分）
+    new_model = args[1].strip()
+    
+    # 切换模型
+    old_model = model
+    model = new_model
+    
+    # 清除所有用户的聊天历史
+    chat_history.clear()
+    
+    await model_command.finish(f"小冰变身了，从 {old_model} 切换为 {model}。\n新的小冰登场！！！(´･ω･`)。")
