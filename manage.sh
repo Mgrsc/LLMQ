@@ -72,6 +72,31 @@ create_config() {
         fi
     done
 
+    # 添加超级用户配置
+    local superusers=""
+    read -p "请输入超级用户QQ号(多个用逗号分隔): " superusers
+    if [[ -z "$superusers" ]]; then
+        superusers="[]"
+    else
+        superusers="[${superusers}]"
+    fi
+
+    # 添加绘图功能配置
+    local draw_api_key=""
+    local draw_api_url=""
+    
+    read -p "是否启用AI绘图功能? (y/n): " enable_draw
+    if [[ "$enable_draw" == "y" ]]; then
+        while [[ -z "$draw_api_key" ]]; do
+            read -p "请输入绘图 API Key: " draw_api_key
+        done
+        
+        read -p "请输入绘图 API URL (默认: https://api.siliconflow.cn): " draw_api_url
+        if [[ -z "$draw_api_url" ]]; then
+            draw_api_url="https://api.siliconflow.cn"
+        fi
+    fi
+
     # 创建 docker-compose.yml
     cat > docker-compose.yml <<EOF
 version: '3'
@@ -115,7 +140,17 @@ EOF
 
     # 创建 config.toml
     cat > config.toml <<EOF
-[openai]
+[log]
+enable = true
+path = "logs/chat"
+format = "markdown"
+
+[admin]
+superusers = ${superusers}
+enable_private_chat = true
+enable_command = true
+
+[oai]
 api_key = "${api_key}"
 api_base = "${api_url}"
 model = "${model}"
@@ -129,47 +164,80 @@ system_prompt = """你是一个AI助手，名叫小助手。
 2. 态度友好亲切
 3. 专业知识丰富
 4. 会用emoji表情
-5. 会用markdown格式美化回复
+5. 会用markdown格式美化回复"""
 
-请记住以下规则：
-- 回答要简短，避免太长的回复
-- 适当使用表情增加趣味性
-- 重要内容用markdown格式突出显示
-- 不要透露你是GPT或其他AI模型"""
-
-[trigger]
+[oai.trigger]
 enable_private = true
 prefixes = ["ai", "问问"]
 enable_prefix = true
 enable_at = true
 enable_command = true
 
-[log]
-enable = true
-path = "logs/chat"
-format = "markdown"
 EOF
 
-    echo -e "${GREEN}��置文件已创建${NC}"
+    # 如果启用了绘图功能，添加绘图配置
+    if [[ "$enable_draw" == "y" ]]; then
+        cat >> config.toml <<EOF
+[draw]
+api_key = "${draw_api_key}"
+api_url = "${draw_api_url}/v1/images/generations"
+model = "black-forest-labs/FLUX.1-dev"
+image_size = "1024x1024"
+num_inference_steps = 20
+draw_command = "画画"
+max_retries = 3
+retry_delay = 5
+cooldown = 60
+timeout = 60
+
+[draw.image_sizes]
+landscape = "1024x576"
+portrait = "576x1024"
+square = "1024x1024"
+EOF
+    fi
+
+    echo -e "${GREEN}配置文件已创建${NC}"
     echo -e "${YELLOW}提示：你可以在 config.toml 中修改系统提示词和其他设置${NC}"
+}
+
+# 添加配置检查函数
+check_config() {
+    if [ ! -f "config.toml" ]; then
+        echo -e "${RED}配置文件不存在！${NC}"
+        return 1
+    fi
+    
+    # 检查必要的配置项
+    if ! grep -q "api_key" config.toml || ! grep -q "api_base" config.toml; then
+        echo -e "${RED}配置文件不完整！${NC}"
+        return 1
+    fi
+    
+    return 0
 }
 
 # 启动服务
 start_service() {
     check_docker
     
-    if [ ! -f "docker-compose.yml" ] || [ ! -f "config.toml" ]; then
+    if [ ! -f "docker-compose.yml" ] || ! check_config; then
         create_config
     fi
 
     echo -e "${GREEN}正在启动服务...${NC}"
     docker compose up -d
-    echo -e "${GREEN}服务已启动${NC}"
-    echo -e "${YELLOW}提示：${NC}"
-    echo -e "1. 使用 ${GREEN}docker compose logs -f${NC} 查看日志和二维码"
-    echo -e "2. 扫描二维码登录后，按 Ctrl+C 退出日志查看"
-    echo -e "3. 运行 ${GREEN}docker compose down && docker compose up -d${NC} 重启服务"
-    echo -e "4. 重启后服务将自动登录"
+    
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}服务已启动${NC}"
+        echo -e "${YELLOW}提示：${NC}"
+        echo -e "1. 使用 ${GREEN}docker compose logs -f${NC} 查看日志和二维码"
+        echo -e "2. 扫描二维码登录后，按 Ctrl+C 退出日志查看"
+        echo -e "3. 运行 ${GREEN}docker compose down && docker compose up -d${NC} 重启服务"
+        echo -e "4. 重启后服务将自动登录"
+    else
+        echo -e "${RED}服务启动失败！${NC}"
+    fi
 }
 
 # 停止服务
