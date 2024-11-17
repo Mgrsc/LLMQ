@@ -250,7 +250,7 @@ def parse_args(text: str) -> Tuple[str, dict]:
     args = {
         "size": IMAGE_SIZE,
         "steps": NUM_INFERENCE_STEPS,
-        "service": "siliconflow"  # 默认使用 siliconflow
+        "service": draw_config.get("default_service", "siliconflow")  # 从配置读取默认服务
     }
     
     pattern = r'^(.*?)(?:\s+-[snm]\s+\S+)*$'
