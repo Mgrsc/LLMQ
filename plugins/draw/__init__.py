@@ -39,7 +39,6 @@ with open(config_file, "rb") as f:
 # 获取配置
 API_KEY = draw_config["api_key"]
 API_URL = draw_config["api_url"]
-MODEL = draw_config["model"]
 IMAGE_SIZE = draw_config["image_size"]
 NUM_INFERENCE_STEPS = draw_config["num_inference_steps"]
 DRAW_COMMAND = draw_config["draw_command"]
@@ -233,7 +232,7 @@ async def optimize_prompt(prompt: str, max_retries: int = 3) -> str:
             logger.error(f"提示词优化过程中发生错误 (第{retry_count + 1}次尝试): {str(e)}")
             if retry_count == max_retries - 1:
                 await draw.finish(random.choice([
-                    "你是不是画了上面不该画的？",
+                    "你是不画了上面不该画的？",
                     "中间层崩了~~",
                     "这个内容不太合适呢",
                     "换个别的画吧~"
@@ -330,7 +329,7 @@ drawing_manager = DrawingManager()
 silicon_flow = SiliconFlowService(
     api_key=API_KEY,
     api_url=API_URL,
-    model=MODEL,
+    model=draw_config.get("model", "black-forest-labs/FLUX.1-dev"),
     timeout=TIMEOUT,
     max_retries=MAX_RETRIES,
     retry_delay=RETRY_DELAY
