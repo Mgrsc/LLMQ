@@ -52,7 +52,7 @@ class FALService(DrawingService):
         self,
         prompt: str,
         size: str,
-        steps: int,  # 这个参数会被忽略
+        steps: int,
         **kwargs
     ) -> tuple[bytes, float]:
         """调用 FAL API 生成图片"""
@@ -84,18 +84,26 @@ class FALService(DrawingService):
             
             if not result.get('images'):
                 raise Exception("未获取到图片结果")
-                
-            # 获取第一张图片的 base64 数据
+            
+            # 获取第一张图片的数据并记录日志
             image_data = result['images'][0]['url']
+            # 只输出数据格式类型
+            data_format = "base64格式" if image_data.startswith("data:image") else "URL格式"
+            logger.info(f"获取到{data_format}的图片数据")
             
-            if not image_data.startswith("data:image"):
-                raise Exception("图片数据格式错误")
-                
-            # 解码 base64 数据
-            base64_data = image_data.split(",")[1]
-            image_bytes = base64.b64decode(base64_data)
+            # 修改图片数据处理逻辑
+            if image_data.startswith("data:image"):
+                base64_data = image_data.split(",")[1]
+                image_bytes = base64.b64decode(base64_data)
+            else:
+                import httpx
+                async with httpx.AsyncClient(timeout=self.timeout) as client:
+                    response = await client.get(image_data)
+                    if response.status_code != 200:
+                        raise Exception(f"下载图片失败: {response.status_code}")
+                    image_bytes = response.content
+                    logger.info("成功下载图片")
             
-            # FAL API 不返回推理时间，这里返回 0
             return image_bytes, 0.0
             
         except Exception as e:

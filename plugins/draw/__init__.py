@@ -123,91 +123,126 @@ def check_draw_command() -> Rule:
 draw = on_message(rule=check_draw_command(), priority=10, block=True)
 
 # 添加提示词优化函数
-async def optimize_prompt(prompt: str) -> str:
-    """优化提示词"""
-    try:
-        headers = {
-            "Authorization": f"Bearer {config['oai']['api_key']}",
-            "Content-Type": "application/json"
-        }
-        
-        # 正确处理模板中的 prompt 变量
-        template_content = PROMPT_TEMPLATE.replace("{prompt}", prompt)
-        
-        messages = [
-            {
-                "role": "system",
-                "content": template_content
+async def optimize_prompt(prompt: str, max_retries: int = 3) -> str:
+    """优化提示词，失败时重试"""
+    for retry_count in range(max_retries):
+        try:
+            headers = {
+                "Authorization": f"Bearer {config['oai']['api_key']}",
+                "Content-Type": "application/json"
             }
-        ]
-        
-        logger.info(f"开始优化提示词: {prompt}")
-        logger.debug(f"使用模型: {PROMPT_OPTIMIZER_MODEL}")
-        
-        async with httpx.AsyncClient() as client:
-            try:
-                logger.debug("发送优化请求...")
-                response = await client.post(
-                    f"{config['oai']['api_base']}/v1/chat/completions",
-                    headers=headers,
-                    json={
-                        "model": PROMPT_OPTIMIZER_MODEL,
-                        "messages": messages,
-                        "temperature": 0.7,
-                        "max_tokens": 200
-                    },
-                    timeout=30.0
-                )
-            except httpx.TimeoutException as e:
-                logger.error(f"提示词优化请求超时: {str(e)}")
-                return prompt
-            except httpx.RequestError as e:
-                logger.error(f"提示词优化请求错误: {str(e)}")
-                return prompt
-            except Exception as e:
-                logger.error(f"提示词优化请求异常: {str(e)}", exc_info=True)
-                return prompt
-                
-            try:
-                logger.debug(f"API响应状态码: {response.status_code}")
-                logger.debug(f"API响应内容: {response.text[:200]}...")
-                
-                if response.status_code != 200:
-                    logger.error(f"提示词优化失败，状态码：{response.status_code}")
-                    logger.error(f"错误响应：{response.text}")
-                    return prompt
-                    
-                result = response.json()
-                logger.debug("成功解析API响应")
-                
-                optimized_prompt = result["choices"][0]["message"]["content"].strip()
-                logger.info(f"提示词优化成功: {optimized_prompt}")
-                
-                # 清理优化后的提示词
-                optimized_prompt = optimized_prompt.replace("\n", " ").strip()
-                optimized_prompt = re.sub(r'^(?:Input:|Output:)\s*', '', optimized_prompt)
-                optimized_prompt = re.sub(r'\s*(?:Input:|Output:)\s*', '', optimized_prompt)
-                
-                logger.info(f"原始提示词: {prompt}")
-                logger.info(f"优化后提示词: {optimized_prompt}")
-                
-                return optimized_prompt
-                
-            except KeyError as e:
-                logger.error(f"API响应格式错误: {str(e)}")
-                logger.error(f"响应内容: {response.text}")
-                return prompt
-            except json.JSONDecodeError as e:
-                logger.error(f"API响应解析失败: {str(e)}")
-                logger.error(f"响应内容: {response.text}")
-                return prompt
-            except Exception as e:
-                logger.error(f"处理API响应时发生错误: {str(e)}", exc_info=True)
-                return prompt
             
-    except Exception as e:
-        logger.error(f"提示词优化过程中发生未知错误: {str(e)}", exc_info=True)
-        return prompt
+            template_content = PROMPT_TEMPLATE.replace("{prompt}", prompt)
+            messages = [
+                {
+                    "role": "system",
+                    "content": template_content
+                }
+            ]
+            
+            logger.info(f"开始优化提示词 (第{retry_count + 1}次尝试): {prompt}")
+            
+            try:
+                async with httpx.AsyncClient() as client:
+                    async def request():
+                        response = await client.post(
+                            f"{config['oai']['api_base']}/v1/chat/completions",
+                            headers=headers,
+                            json={
+                                "model": PROMPT_OPTIMIZER_MODEL,
+                                "messages": messages,
+                                "temperature": 0.7,
+                                "max_tokens": 200
+                            },
+                            timeout=30.0
+                        )
+                        return response
+
+                    # 添加30秒超时
+                    response = await asyncio.wait_for(request(), timeout=30.0)
+                    
+                    if response.status_code != 200:
+                        logger.error(f"提示词优化失败，状态码：{response.status_code}")
+                        if retry_count == max_retries - 1:
+                            await draw.finish(random.choice([
+                                "你是不是画了上面不该画的？",
+                                "中间层崩了~~",
+                                "这个内容不太合适呢",
+                                "换个别的画吧~"
+                            ]))
+                            return ""
+                        continue
+                        
+                    result = response.json()
+                    optimized_prompt = result["choices"][0]["message"]["content"].strip()
+                    
+                    # 如果优化后的提示词为空，尝试重试
+                    if not optimized_prompt:
+                        if retry_count < max_retries - 1:
+                            logger.warning(f"提示词优化返回空，进行第{retry_count + 2}次尝试")
+                            await asyncio.sleep(1)  # 等待1秒后重试
+                            continue
+                        else:
+                            await draw.finish(random.choice([
+                                "你是不是画了上面不该画的？",
+                                "中间层崩了~~",
+                                "这个内容不太合适呢",
+                                "换个别的画吧~"
+                            ]))
+                            return ""
+                    
+                    # 清理优化后的提示词
+                    optimized_prompt = optimized_prompt.replace("\n", " ").strip()
+                    optimized_prompt = re.sub(r'^(?:Input:|Output:)\s*', '', optimized_prompt)
+                    optimized_prompt = re.sub(r'\s*(?:Input:|Output:)\s*', '', optimized_prompt)
+                    
+                    logger.info(f"原始提示词: {prompt}")
+                    logger.info(f"优化后提示词: {optimized_prompt}")
+                    
+                    # 如果清理后的提示词为空，尝试重试
+                    if not optimized_prompt:
+                        if retry_count < max_retries - 1:
+                            logger.warning(f"清理后提示词为空，进行第{retry_count + 2}次尝试")
+                            await asyncio.sleep(1)
+                            continue
+                        else:
+                            await draw.finish(random.choice([
+                                "你是不是画了上面不该画的？",
+                                "中间层崩了~~",
+                                "这个内容不太合适呢",
+                                "换个别的画吧~"
+                            ]))
+                            return ""
+                    
+                    return optimized_prompt
+                    
+            except asyncio.TimeoutError:
+                logger.error(f"提示词优化超时 (第{retry_count + 1}次尝试)")
+                if retry_count == max_retries - 1:
+                    await draw.finish(random.choice([
+                        "中间层超时了...",
+                        "优化提示词超时了，请稍后再试",
+                        "处理时间太长了，换个时间再试吧",
+                        "服务器太忙了，稍后再来哦~"
+                    ]))
+                    return ""
+                await asyncio.sleep(1)
+                continue
+                
+        except Exception as e:
+            logger.error(f"提示词优化过程中发生错误 (第{retry_count + 1}次尝试): {str(e)}")
+            if retry_count == max_retries - 1:
+                await draw.finish(random.choice([
+                    "你是不是画了上面不该画的？",
+                    "中间层崩了~~",
+                    "这个内容不太合适呢",
+                    "换个别的画吧~"
+                ]))
+                return ""
+            await asyncio.sleep(1)
+            continue
+            
+    return ""  # 所有重试都失败后返回空字符串
 
 def parse_args(text: str) -> Tuple[str, dict]:
     """解析命令参数"""
@@ -322,7 +357,7 @@ async def handle_draw(event: MessageEvent):
     start_time = datetime.now()
     
     try:
-        # 检查冷却��间
+        # 检查冷却间
         if user_id in last_use_time:
             elapsed = datetime.now() - last_use_time[user_id]
             if elapsed.total_seconds() < COOLDOWN:
@@ -366,6 +401,10 @@ async def handle_draw(event: MessageEvent):
                 # 优化提示词
                 optimized_prompt = await optimize_prompt(prompt)
                 
+                # 如果优化后的提示词为空，直接返回（因为optimize_prompt已经发送了提示消息）
+                if not optimized_prompt:
+                    return
+                
                 # 内容检查
                 if not check_content(optimized_prompt):
                     await draw.finish(random.choice(FILTER_MESSAGES))
@@ -373,7 +412,7 @@ async def handle_draw(event: MessageEvent):
                 
                 # 使用绘画管理器生成图片
                 image_data, inference_time = await drawing_manager.generate_image(
-                    args["service"],  # 使用选择的服务
+                    args["service"],
                     optimized_prompt,
                     args["size"],
                     args["steps"]
@@ -385,25 +424,28 @@ async def handle_draw(event: MessageEvent):
                 # 计算总用时
                 total_time = (datetime.now() - start_time).total_seconds()
                 
+                # 修改消息构建部分
+                msg_text = (
+                    f"\n这是你要的：{prompt}\n"  # 使用 f-string
+                    f"优化后的提示词：{optimized_prompt}\n"
+                    f"参数：尺寸={args['size']}, 步数={args['steps']}\n"
+                    f"总用时：{total_time:.1f}秒"
+                )
+                
                 # 构建消息
                 msg = Message([
                     MessageSegment.image(image_data),
-                    MessageSegment.text(
-                        f"\n这是你要的{prompt}\n"
-                        f"优化后的提示词：{optimized_prompt}\n"
-                        f"参数：{args['size']}, {args['steps']} step\n"
-                        f"总用时：{total_time:.1f}秒"
-                    )
+                    MessageSegment.text(msg_text)  # 使用预先构建的文本
                 ])
                 
                 await draw.finish(msg)
                 
             except Exception as e:
                 if not isinstance(e, FinishedException):
-                    logger.error(f"生成图片过程中发生错误: {str(e)}", exc_info=True)
+                    logger.error(f"生成图片过程中发生错误: {e}", exc_info=True)  # 修改错误日志格式
                     await draw.finish(random.choice(ERROR_MESSAGES))
                 
     except Exception as e:
         if not isinstance(e, FinishedException):
-            logger.error(f"处理请求过程中发生未知错误: {str(e)}", exc_info=True)
+            logger.error(f"处理请求过程中发生错误: {e}", exc_info=True)  # 修改错误日志格式
             await draw.finish(random.choice(ERROR_MESSAGES))
