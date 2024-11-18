@@ -71,13 +71,15 @@ chat_history = defaultdict(list)
 # 在配置部分添加
 separate_users = oai_config.get("separate_users", True)
 
-# 修改用户标识获取函数
+# 修改用户标识获取函
 def get_user_id(event: MessageEvent) -> str:
     if isinstance(event, GroupMessageEvent):
-        if separate_users:
-            return f"group_{event.group_id}_{event.user_id}"
+        group_id = event.group_id
+        # 根据群设置决定是否隔离用户
+        if group_isolation.get(group_id, default_isolation):
+            return f"group_{group_id}_{event.user_id}"
         else:
-            return f"group_{event.group_id}"
+            return f"group_{group_id}"
     return f"private_{event.user_id}"
 
 # 自定义规则：检查消息前缀，并排除命令
@@ -393,7 +395,7 @@ async def save_chat_log(
     except Exception as e:
         print(f"日志记录失败：{e}")
 
-# 添加消息清理函数
+# 添加消清理函数
 def clean_message(text: str) -> str:
     if not text:
         return text
@@ -421,6 +423,12 @@ empty_input_msg = message_config.get("empty_input", "请输入有效的消息内
 empty_at_msg = message_config.get("empty_at", "Hi，我在呢！有什么可以帮你的吗？")
 
 async def handle_chat_common(event: MessageEvent, msg_text: str):
+    # 检查群聊功能是否开启
+    if isinstance(event, GroupMessageEvent):
+        group_id = event.group_id
+        if not chat_enabled.get(group_id, default_chat_enabled):
+            return "小冰已读，不回！。"
+    
     # 检查私聊权限
     if isinstance(event, PrivateMessageEvent) and not private_chat_enabled:
         return "私聊功能已禁用"
@@ -615,20 +623,19 @@ async def handle_clear_history(event: MessageEvent):
 if enable_at:
     @chat_at.handle()
     async def handle_chat_at(event: MessageEvent):
-        # 检查私聊权限
-        if isinstance(event, PrivateMessageEvent):
-            if not await check_private_chat(event):
-                await chat_at.finish("禁止私聊，加群去685618193自己部署")
+        # 检查群聊功能
+        if isinstance(event, GroupMessageEvent):
+            group_id = event.group_id
+            if not chat_enabled.get(group_id, default_chat_enabled):
+                await chat_at.finish("当前群聊的对话功能已关闭。")
                 return
         
         msg_text = event.get_plaintext().strip()
         # 处理空@的情况
         if not msg_text:
-            # 从配置中获取空@消息列表
             empty_at_messages = config.get("messages", {}).get("empty_at", [
                 "Hi，我在呢！有什么可以帮你的吗？😊"
             ])
-            # 随机选择一条消息
             random_msg = random.choice(empty_at_messages) if isinstance(empty_at_messages, list) else empty_at_messages
             await chat_at.finish(Message(random_msg))
             return
@@ -640,6 +647,13 @@ if enable_at:
 if enable_prefix:
     @chat_prefix.handle()
     async def handle_chat_prefix(event: MessageEvent):
+        # 检查群聊功能
+        if isinstance(event, GroupMessageEvent):
+            group_id = event.group_id
+            if not chat_enabled.get(group_id, default_chat_enabled):
+                await chat_prefix.finish("当前群聊的对话功能已关闭。")
+                return
+        
         # 检查私聊权限
         if isinstance(event, PrivateMessageEvent):
             if not await check_private_chat(event):
@@ -660,8 +674,19 @@ if enable_prefix:
 if enable_command:
     @chat_command.handle()
     async def handle_chat_command(event: MessageEvent):
-        # 检查私聊权限
-        if isinstance(event, PrivateMessageEvent) and not private_chat_enabled:
+        # 检查群聊功能
+        if isinstance(event, GroupMessageEvent):
+            group_id = event.group_id
+            if not chat_enabled.get(group_id, default_chat_enabled):
+                await chat_command.finish("当前群聊的对话功能已关闭。")
+                return
+        
+        if not await check_command_permission(event):
+            await chat_command.finish("您没有使用命令的权限")
+            return
+            
+        if isinstance(event, PrivateMessageEvent) and not await check_private_chat(event):
+            await chat_command.finish("私聊功能已禁用")
             return
             
         msg_text = str(event.get_message()).strip()
@@ -693,253 +718,116 @@ async def check_command_permission(event: MessageEvent) -> bool:
         return admin_command
     return enable_command
 
-# 修改 handle_chat_common 函数中的私聊检查部分
-async def handle_chat_common(event: MessageEvent, msg_text: str):
-    # 检查私聊权限
-    if isinstance(event, PrivateMessageEvent):
-        if not await check_private_chat(event):
-            return "私聊功能已禁用"
-    
-    # 使用新的用户标识获取函数
-    user_id = get_user_id(event)
-    
-    # 获取用户信息
-    user_name = event.sender.nickname or str(event.user_id)
-    group_id = None
-    group_name = None
-    if isinstance(event, GroupMessageEvent):
-        group_id = event.group_id
-        group_name = "未知群名"  # 如果需要真实群名，需要通过 API 获取
-    
-    try:
-        # 创建 HTTP 头部
-        headers = {
-            "Authorization": f"Bearer {openai.api_key}",
-            "Content-Type": "application/json"
-        }
-        
-        # 准备消息历史
-        messages = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        
-        # 添加历史消息（不包含 system prompt）
-        user_messages = [msg for msg in chat_history[user_id] if msg["role"] != "system"]
-        messages.extend(user_messages)
-        # 添加当前消息
-        messages.append({"role": "user", "content": msg_text})
-        
-        data = {
-            "model": model,
-            "messages": messages,
-            "temperature": temperature,
-            "max_tokens": max_tokens
-        }
-        
-        # 检查输入消息是否为空
-        if not msg_text.strip():
-            # 从配置中获取空消息列表，如果不是列表则转换为列表
-            empty_messages = messages_config.get("empty_input", ["请输入有效的消息内容"])
-            if not isinstance(empty_messages, list):
-                empty_messages = [empty_messages]
-            
-            # 随机选择一条消息
-            error_msg = random.choice(empty_messages)
-            
-            await save_chat_log(
-                str(event.user_id), user_name, group_id, group_name,
-                msg_text, "", error_msg
-            )
-            return error_msg
-        
-        # 发送请求
-        import httpx
-        async with httpx.AsyncClient() as client:
-            try:
-                response = await client.post(
-                    f"{openai.base_url}/v1/chat/completions",
-                    headers=headers,
-                    json=data,
-                    timeout=30.0
-                )
-            except httpx.TimeoutException:
-                error_msg = "请求超时，请稍后重试"
-                await save_chat_log(
-                    str(event.user_id), user_name, group_id, group_name,
-                    msg_text, "", error_msg
-                )
-                return error_msg
-            except httpx.NetworkError:
-                error_msg = "网络错误，请检查网络连接"
-                await save_chat_log(
-                    str(event.user_id), user_name, group_id, group_name,
-                    msg_text, "", error_msg
-                )
-                return error_msg
-            
-            if response.status_code != 200:
-                error_msg = f"API ���求失败：{response.status_code} - {response.text}"
-                await save_chat_log(
-                    str(event.user_id), user_name, group_id, group_name,
-                    msg_text, "", error_msg
-                )
-                return error_msg
-            
-            try:
-                result = response.json()
-            except json.JSONDecodeError:
-                error_msg = "API 返回的数据格式错误"
-                await save_chat_log(
-                    str(event.user_id), user_name, group_id, group_name,
-                    msg_text, "", error_msg
-                )
-                return error_msg
-            
-            # 检查返回数据的完整性
-            if not result:
-                error_msg = "API 返回空数据"
-                await save_chat_log(
-                    str(event.user_id), user_name, group_id, group_name,
-                    msg_text, "", error_msg
-                )
-                return error_msg
-                
-            if "choices" not in result or not result["choices"]:
-                error_msg = "API 返回数据不完整"
-                await save_chat_log(
-                    str(event.user_id), user_name, group_id, group_name,
-                    msg_text, "", error_msg
-                )
-                return error_msg
-            
-            # 获取回复内容并清理
-            try:
-                reply = result["choices"][0]["message"]["content"]
-                reply = clean_message(reply)  # 清理回复内容
-            except (KeyError, IndexError):
-                error_msg = "API 返回数据结构异常"
-                await save_chat_log(
-                    str(event.user_id), user_name, group_id, group_name,
-                    msg_text, "", error_msg
-                )
-                return error_msg
-            
-            # 检查回复内容
-            if not reply or not reply.strip():
-                error_msg = "API 返回空回复"
-                await save_chat_log(
-                    str(event.user_id), user_name, group_id, group_name,
-                    msg_text, "", error_msg
-                )
-                return error_msg
-            
-            # 记录成功的对话（使用清理后的回复）
-            await save_chat_log(
-                str(event.user_id), user_name, group_id, group_name,
-                msg_text, reply
-            )
-            
-            # 更新对话历史（使用清理后的回复）
-            try:
-                # 确保历史记录中包含 system prompt
-                if system_prompt and (not chat_history[user_id] or chat_history[user_id][0]["role"] != "system"):
-                    chat_history[user_id].insert(0, {"role": "system", "content": system_prompt})
-                
-                chat_history[user_id].append({"role": "user", "content": msg_text})
-                chat_history[user_id].append({"role": "assistant", "content": reply})
-                
-                # 保持历史记录在限定条数内，但保留 system prompt
-                if system_prompt:
-                    while len(chat_history[user_id]) > (max_history * 2) + 1:
-                        chat_history[user_id].pop(1)
-                        chat_history[user_id].pop(1)
-                else:
-                    while len(chat_history[user_id]) > max_history * 2:
-                        chat_history[user_id].pop(0)
-            except Exception as e:
-                print(f"更新对话历史时发生错误：{e}")
-                # 继续处理，不影响回复
-            
-            return Message(reply)  # 返回清理后的回复
-        
-    except Exception as e:
-        error_msg = f"发生未知错误：{str(e)}"
-        await save_chat_log(
-            str(event.user_id), user_name, group_id, group_name,
-            msg_text, "", error_msg
-        )
-        return error_msg
+# 在文件开头的导入部分添加
+from typing import Dict
 
-# 修改命令处理器的权限
-command = on_command(
-    "oai", 
-    permission=lambda event: event.user_id in superusers, 
-    priority=5, 
-    block=True
-)
+# 在全局变量部分添加
+group_isolation: Dict[int, bool] = {}  # 存储每个群的隔离状态
+default_isolation = oai_config.get("group_isolation", True)  # 从配置文件获取默认值
+chat_enabled: Dict[int, bool] = {}  # 存储每个群的聊天功能状态
+default_chat_enabled = True  # 默认开启聊天功能
 
-# 修改聊天命令处理器
-if enable_command:
-    @chat_command.handle()
-    async def handle_chat_command(event: MessageEvent):
-        if not await check_command_permission(event):
-            await chat_command.finish("您没有使用命令的权限")
-            return
-            
-        if isinstance(event, PrivateMessageEvent) and not await check_private_chat(event):
-            await chat_command.finish("私聊功能已禁用")
-            return
-            
-        msg_text = str(event.get_message()).strip()
-        reply = await handle_chat_common(event, msg_text)
-        if reply:
-            await chat_command.finish(reply)
-
-# 修改清除历史记录命令的权限
-clear_history = on_command(
-    "clear", 
-    permission=lambda event: event.user_id in superusers, 
-    priority=10, 
-    block=True
-)
-
-# 修改 model 命令处理器
-model_command = on_command(
-    "model",
+# 添加新的命令处理器
+chat_settings = on_command(
+    "chat",
     permission=lambda event: event.user_id in superusers,
     priority=5,
     block=True
 )
 
-@model_command.handle()
-async def handle_model_command(event: MessageEvent):
-    global model  # 使用全局变量
-    # 获取消息文本并移除命令前缀 "/model"
-    msg_text = str(event.get_message()).strip()
-    args = msg_text.split(maxsplit=1)  # 最多分割一次
+@chat_settings.handle()
+async def handle_chat_settings(event: MessageEvent):
+    global group_isolation, chat_enabled
     
-    # 如果没有参数，显示当前模型
-    if len(args) <= 1:  # 只有 "/model" 没有参数
-        await model_command.finish(f"""当前模型：{model}
+    # 获取原始消息文本
+    msg_text = str(event.get_message()).strip()
+    
+    # 如果只有命令名称（"/chat"），显示当前状态
+    if msg_text == "/chat":
+        if isinstance(event, GroupMessageEvent):
+            group_id = event.group_id
+            isolation_status = "开启" if group_isolation.get(group_id, default_isolation) else "关闭"
+            chat_status = "开启" if chat_enabled.get(group_id, default_chat_enabled) else "关闭"
+            
+            await chat_settings.finish(f"""群聊设置状态：
+- 聊天功能：{chat_status}
+- 对话隔离：{isolation_status}
 
 使用方法：
-/model <模型名称>  - 切换到指定模型""")
+/chat true      - 开启群聊功能
+/chat false     - 关闭群聊功能
+/chat group true  - 开启群聊隔离（每个人独立对话）
+/chat group false - 关闭群聊隔离（群内共享对话）""")
+        else:
+            await chat_settings.finish("此命令只能在群聊中使用。")
         return
     
-    # 获取新模型名称（去除命令部分）
-    new_model = args[1].strip()
+    # 获取命令参数
+    args = msg_text.split()[1:]  # 去掉命令名称，获取参数部分
+    if not args:
+        # 如果没有参数，显示帮助信息
+        await chat_settings.finish("""使用方法：
+/chat true      - 开启群聊功能
+/chat false     - 关闭群聊功能
+/chat group true  - 开启群聊隔离
+/chat group false - 关闭群聊隔离""")
+        return
     
-    # 切换模型
-    old_model = model
-    model = new_model
+    # 处理群聊开关命令
+    if args[0].lower() in ['true', 'false']:
+        if not isinstance(event, GroupMessageEvent):
+            await chat_settings.finish("此命令只能在群聊中使用。")
+            return
+        
+        group_id = event.group_id
+        new_state = args[0].lower() == 'true'
+        old_state = chat_enabled.get(group_id, default_chat_enabled)
+        
+        # 更新设置
+        chat_enabled[group_id] = new_state
+        
+        await chat_settings.finish(f"群聊功能已{'开启' if new_state else '关闭'}。")
+        return
     
-    # 清除所有用户的聊天历史
-    chat_history.clear()
+    # 处理群聊隔离命令
+    if len(args) >= 2 and args[0] == "group":
+        if not isinstance(event, GroupMessageEvent):
+            await chat_settings.finish("此命令只能在群聊中使用。")
+            return
+        
+        group_id = event.group_id
+        
+        # 解析 true/false 参数
+        if args[1].lower() not in ['true', 'false']:
+            await chat_settings.finish("参数错误。请使用 'true' 或 'false'。")
+            return
+        
+        new_state = args[1].lower() == 'true'
+        old_state = group_isolation.get(group_id, default_isolation)
+        
+        # 更新设置
+        group_isolation[group_id] = new_state
+        
+        # 如果状态发生改变，清理该群的历史记录
+        if new_state != old_state:
+            group_prefix = f"group_{group_id}"
+            # 清理相关的历史记录
+            for key in list(chat_history.keys()):
+                if key.startswith(group_prefix):
+                    chat_history.pop(key)
+            
+            # 如果关闭隔离，创建新的群组共享历史记录
+            if not new_state:
+                chat_history[f"group_{group_id}"] = []
+                if system_prompt:
+                    chat_history[f"group_{group_id}"].append({"role": "system", "content": system_prompt})
+        
+        await chat_settings.finish(f"群聊隔离已{'开启' if new_state else '关闭'}。\n{'每个人的对话都是独立的' if new_state else '群内成员共享对话上下文'}。")
+        return
     
-    # 如果有系统提示语，为所有用户初始化带有系统提示语的对话
-    if system_prompt:
-        # 为每个用户添加系统提示语
-        for user_id in chat_history:
-            chat_history[user_id].append({"role": "system", "content": system_prompt})
-    
-    await model_command.finish(f"冰冰变身了，从 {old_model} 切换为 {model}。\n新的冰哥登场！！！(´･ω･`)。")
+    # 如果命令格式不正确
+    await chat_settings.finish("""无效的命令。使用方法：
+/chat true      - 开启群聊功能
+/chat false     - 关闭群聊功能
+/chat group true  - 开启群聊隔离
+/chat group false - 关闭群聊隔离""")
