@@ -1,7 +1,8 @@
-from nonebot import on_message
-from nonebot.adapters.onebot.v11 import Message, MessageEvent, MessageSegment
+from nonebot import on_message, on_command
+from nonebot.adapters.onebot.v11 import Message, MessageEvent, MessageSegment, GroupMessageEvent, PrivateMessageEvent, Bot
 from nonebot.plugin import PluginMetadata
-from nonebot.rule import Rule
+from nonebot.rule import Rule, to_me
+from nonebot.permission import SUPERUSER
 import tomli
 from pathlib import Path
 import httpx
@@ -13,6 +14,8 @@ import re
 import random
 from nonebot.exception import FinishedException
 import json
+from nonebot.matcher import Matcher
+from nonebot.params import CommandArg
 
 from .drawing_manager import DrawingManager
 from .services.siliconflow import SiliconFlowService
@@ -25,6 +28,9 @@ __plugin_meta__ = PluginMetadata(
     {bot_name}画 <描述文字>""",
     config=None,
 )
+
+# 在文件开头的配置部分之前添加全局变量声明
+drawing_enabled: bool = True  # 默认启用绘图功能
 
 # 读取配置文件
 config_file = Path("config.toml")
@@ -109,17 +115,211 @@ DRAWING_START_MESSAGES = draw_messages.get("drawing_start", [
     "冰冰拿起画笔开始画了..."
 ])
 
-# 自定义规则：检查消息是否以画图命令开头
-def check_draw_command() -> Rule:
-    async def _check_draw_command(event: MessageEvent) -> bool:
-        msg = event.get_plaintext().strip()
-        is_match = msg.startswith(DRAW_COMMAND)
-        logger.debug(f"收到消息：{msg}，是否匹配命令：{is_match}")
-        return is_match
-    return Rule(_check_draw_command)
+# 用于存储绘图功能的启用状态
+drawing_enabled = True
 
-# 创建消息响应器
-draw = on_message(rule=check_draw_command(), priority=10, block=True)
+# 自定义规则：检查消息是否为绘图关命令
+def check_draw_commands() -> Rule:
+    async def _check_draw_commands(event: MessageEvent) -> bool:
+        msg = event.get_plaintext().strip()
+        # 检查是否为管理命令或绘图命令
+        return msg.startswith("/draw") or msg.startswith(DRAW_COMMAND)
+    return Rule(_check_draw_commands)
+
+# 创建统一的消息响应器
+draw = on_message(
+    rule=check_draw_commands(),
+    priority=10,
+    block=True
+)
+
+@draw.handle()
+async def handle_draw(bot: Bot, event: MessageEvent):
+    global drawing_enabled
+    msg = event.get_plaintext().strip()
+    
+    # 记录日志
+    logger.info(f"收到消息 - 用户ID: {event.user_id}, 群ID: {event.group_id if isinstance(event, GroupMessageEvent) else 'private'}")
+    logger.info(f"原始消息: {msg}")
+    
+    # 处理 /draw 管理命令
+    if msg.startswith("/draw"):
+        # 检查权限
+        if event.user_id not in config.get("admin", {}).get("superusers", []):
+            logger.warning(f"用户 {event.user_id} 尝试使用管理命令但权限不足")
+            await draw.finish("您没有使用该命令的权限")
+            return
+            
+        # 获取参数
+        cmd_text = msg.replace("/draw", "").strip()
+        logger.info(f"管理命令参数: '{cmd_text}'")
+        
+        try:
+            # 没有参数时显示帮助信息
+            if not cmd_text:
+                status = "开启" if drawing_enabled else "关闭"
+                help_text = f"""当前绘图功能状态：{status}
+
+可用命令：
+/draw true - 开启绘图功能
+/draw false - 关闭绘图功能
+/draw model - 显示可用模型列表
+/draw model <模型名称> - 切换到指定模型"""
+                logger.info("发送帮助信息")
+                await bot.send(event=event, message=help_text)
+                return
+
+            # 处理命令
+            args = cmd_text.split()
+            cmd = args[0].lower()
+            
+            if cmd in ["true", "false"]:
+                drawing_enabled = (cmd == "true")
+                logger.info(f"绘图功能已{'开启' if drawing_enabled else '关闭'}")
+                await bot.send(event=event, message=f"绘图功能已{'开启' if drawing_enabled else '关闭'}")
+                
+            elif cmd == "model":
+                if len(args) == 1:  # 显示可用模型列表
+                    models = {
+                        "flux1": "Silicon Flow的FLUX.1模型",
+                        "flux1.1": "FAL的FLUX 1.1-ultra模型"
+                    }
+                    model_list = "\n".join(f"- {k}: {v}" for k, v in models.items())
+                    current_model = draw_config.get("default_service", "siliconflow")
+                    response = (
+                        f"当前使用的模型：{current_model}\n\n"
+                        f"可用模型列表：\n{model_list}\n\n"
+                        f"使用 /draw model <模型名称> 切换模型"
+                    )
+                    logger.info("发送模型列表")
+                    await bot.send(event=event, message=response)
+                else:  # 切换模型
+                    new_model = args[1].lower()
+                    if new_model not in SERVICE_TYPE_MAP:
+                        response = (
+                            f"未知的模型名称：{new_model}\n"
+                            f"可用模型：{', '.join(SERVICE_TYPE_MAP.keys())}"
+                        )
+                        logger.info(f"无效的模型名称: {new_model}")
+                        await bot.send(event=event, message=response)
+                        return
+                        
+                    old_model = draw_config.get("default_service", "siliconflow")
+                    draw_config["default_service"] = SERVICE_TYPE_MAP[new_model]
+                    logger.info(f"切换模型: {old_model} -> {SERVICE_TYPE_MAP[new_model]}")
+                    await bot.send(event=event, message=f"已切换到模型：{new_model}")
+            else:
+                logger.warning(f"无效的命令参数: {cmd}")
+                await bot.send(event=event, message="无效的命令参数，请使用 /draw 查看帮助信息")
+                
+        except Exception as e:
+            logger.error(f"处理管理命令时发生错误: {e}", exc_info=True)
+            await bot.send(event=event, message="命令处理过程中发生错误，请查看日志")
+            
+    # 处理绘图命令
+    elif msg.startswith(DRAW_COMMAND):
+        # 检查功能是否启用
+        if not drawing_enabled:
+            await draw.finish("绘图功能当前已关闭")
+            return
+            
+        user_id = event.user_id
+        start_time = datetime.now()
+        
+        try:
+            # 检查冷却时间
+            if user_id in last_use_time:
+                elapsed = datetime.now() - last_use_time[user_id]
+                if elapsed.total_seconds() < COOLDOWN:
+                    await draw.finish(f"绘图功能冷却中，请在{int(COOLDOWN - elapsed.total_seconds())}秒后再试")
+                    return
+
+            # 检查并发
+            if drawing_lock.locked():
+                await draw.finish("别人在画，你急也没用")
+                return
+
+            # 获取原始消息和解析参数
+            command_text = msg[len(DRAW_COMMAND):].strip()
+            prompt, args = parse_args(command_text)
+            
+            logger.info(f"处理画图请求，原始消息：{msg}")
+            logger.info(f"解析结果 - 提示词：{prompt}，参数：{args}")
+            
+            if not prompt:
+                random_msg = random.choice(EMPTY_INPUT_MESSAGES)
+                await draw.finish(
+                    f"{random_msg}\n"
+                    "参数说明：\n"
+                    "-s [横/竖/正] 指定图片方向\n"
+                    "-n [步数] 指定生成步数(1-100)\n"
+                    "-m [flux1/flux1.1] 指定模型版本"
+                )
+                return
+
+            # 内容过滤检查
+            if not check_content(prompt):
+                await draw.finish(random.choice(FILTER_MESSAGES))
+                return
+
+            async with drawing_lock:
+                try:
+                    # 发送开始绘制的提示
+                    await draw.send(random.choice(DRAWING_START_MESSAGES))
+                    
+                    # 优化提示词
+                    optimized_prompt = await optimize_prompt(prompt)
+                    
+                    # 如果优化后的提示词为空，直接返回（因为optimize_prompt已经发送了提示消息）
+                    if not optimized_prompt:
+                        return
+                    
+                    # 内容检查
+                    if not check_content(optimized_prompt):
+                        await draw.finish(random.choice(FILTER_MESSAGES))
+                        return
+                    
+                    # 使用绘画管理器生成图片
+                    image_data, inference_time = await drawing_manager.generate_image(
+                        args["service"],
+                        optimized_prompt,
+                        args["size"],
+                        args["steps"]
+                    )
+                    
+                    # 更新用户最后使用时间
+                    last_use_time[user_id] = datetime.now()
+                    
+                    # 计算总用时
+                    total_time = (datetime.now() - start_time).total_seconds()
+                    
+                    # 修改消息构建部分
+                    msg_text = (
+                        f"\n这是你要的：{prompt}\n"  # 使用 f-string
+                        f"优化后的提示词：{optimized_prompt}\n"
+                        f"参数：尺寸={args['size']}, 步数={args['steps']}\n"
+                        f"总用时：{total_time:.1f}秒"
+                    )
+                    
+                    # 构建消息
+                    msg = Message([
+                        MessageSegment.image(image_data),
+                        MessageSegment.text(msg_text)  # 使用预先构建的文本
+                    ])
+                    
+                    await draw.finish(msg)
+                    
+                except Exception as e:
+                    # 忽略 FinishedException
+                    if not isinstance(e, FinishedException):
+                        logger.error(f"生成图片过程中发生错误: {e}", exc_info=True)
+                        await draw.finish(random.choice(ERROR_MESSAGES))
+                
+        except Exception as e:
+            # 忽略 FinishedException
+            if not isinstance(e, FinishedException):
+                logger.error(f"处理绘图请求时发生错误: {e}", exc_info=True)
+                await draw.finish(random.choice(ERROR_MESSAGES))
 
 # 添加提示词优化函数
 async def optimize_prompt(prompt: str, max_retries: int = 3) -> str:
@@ -222,7 +422,7 @@ async def optimize_prompt(prompt: str, max_retries: int = 3) -> str:
                         "中间层超时了...",
                         "优化提示词超时了，请稍后再试",
                         "处理时间太长了，换个时间再试吧",
-                        "服务器太忙了，稍后再来哦~"
+                        "服��器太忙了，稍后再来哦~"
                     ]))
                     return ""
                 await asyncio.sleep(1)
@@ -235,7 +435,7 @@ async def optimize_prompt(prompt: str, max_retries: int = 3) -> str:
                     "你是不画了上面不该画的？",
                     "中间层崩了~~",
                     "这个内容不太合适呢",
-                    "换个别的画吧~"
+                    "换别的画吧~"
                 ]))
                 return ""
             await asyncio.sleep(1)
@@ -349,102 +549,3 @@ fal_service = FALService(
     retry_delay=RETRY_DELAY
 )
 drawing_manager.register_service("fal", fal_service)
-
-@draw.handle()
-async def handle_draw(event: MessageEvent):
-    user_id = event.user_id
-    start_time = datetime.now()
-    
-    try:
-        # 检查冷却间
-        if user_id in last_use_time:
-            elapsed = datetime.now() - last_use_time[user_id]
-            if elapsed.total_seconds() < COOLDOWN:
-                await draw.finish(f"绘图功能冷却中，请在{int(COOLDOWN - elapsed.total_seconds())}秒后再试")
-                return
-
-        # 检查并发
-        if drawing_lock.locked():
-            await draw.finish("别人在画，你急也没用")
-            return
-
-        # 获取原始消息和解析参数
-        msg = event.get_plaintext().strip()
-        command_text = msg[len(DRAW_COMMAND):].strip()
-        prompt, args = parse_args(command_text)
-        
-        logger.info(f"处理画图请求，原始消息：{msg}")
-        logger.info(f"解析结果 - 提示词：{prompt}，参数：{args}")
-        
-        if not prompt:
-            random_msg = random.choice(EMPTY_INPUT_MESSAGES)
-            await draw.finish(
-                f"{random_msg}\n"
-                "参数说明：\n"
-                "-s [横/竖/正] 指定图片方向\n"
-                "-n [步数] 指定生成步数(1-100)\n"
-                "-m [flux1/flux1.1] 指定模型版本"
-            )
-            return
-
-        # 内容过滤检查
-        if not check_content(prompt):
-            await draw.finish(random.choice(FILTER_MESSAGES))
-            return
-
-        async with drawing_lock:
-            try:
-                # 发送开始绘制的提示
-                await draw.send(random.choice(DRAWING_START_MESSAGES))
-                
-                # 优化提示词
-                optimized_prompt = await optimize_prompt(prompt)
-                
-                # 如果优化后的提示词为空，直接返回（因为optimize_prompt已经发送了提示消息）
-                if not optimized_prompt:
-                    return
-                
-                # 内容检查
-                if not check_content(optimized_prompt):
-                    await draw.finish(random.choice(FILTER_MESSAGES))
-                    return
-                
-                # 使用绘画管理器生成图片
-                image_data, inference_time = await drawing_manager.generate_image(
-                    args["service"],
-                    optimized_prompt,
-                    args["size"],
-                    args["steps"]
-                )
-                
-                # 更新用户最后使用时间
-                last_use_time[user_id] = datetime.now()
-                
-                # 计算总用时
-                total_time = (datetime.now() - start_time).total_seconds()
-                
-                # 修改消息构建部分
-                msg_text = (
-                    f"\n这是你要的：{prompt}\n"  # 使用 f-string
-                    f"优化后的提示词：{optimized_prompt}\n"
-                    f"参数：尺寸={args['size']}, 步数={args['steps']}\n"
-                    f"总用时：{total_time:.1f}秒"
-                )
-                
-                # 构建消息
-                msg = Message([
-                    MessageSegment.image(image_data),
-                    MessageSegment.text(msg_text)  # 使用预先构建的文本
-                ])
-                
-                await draw.finish(msg)
-                
-            except Exception as e:
-                if not isinstance(e, FinishedException):
-                    logger.error(f"生成图片过程中发生错误: {e}", exc_info=True)  # 修改错误日志格式
-                    await draw.finish(random.choice(ERROR_MESSAGES))
-                
-    except Exception as e:
-        if not isinstance(e, FinishedException):
-            logger.error(f"处理请求过程中发生错误: {e}", exc_info=True)  # 修改错误日志格式
-            await draw.finish(random.choice(ERROR_MESSAGES))
