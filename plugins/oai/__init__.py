@@ -627,7 +627,7 @@ if enable_at:
         if isinstance(event, GroupMessageEvent):
             group_id = event.group_id
             if not chat_enabled.get(group_id, default_chat_enabled):
-                await chat_at.finish("当前群聊的对话功能已关闭。")
+                await chat_at.finish("冰冰收到，已读不回！。")
                 return
         
         msg_text = event.get_plaintext().strip()
@@ -651,7 +651,7 @@ if enable_prefix:
         if isinstance(event, GroupMessageEvent):
             group_id = event.group_id
             if not chat_enabled.get(group_id, default_chat_enabled):
-                await chat_prefix.finish("当前群聊的对话功能已关闭。")
+                await chat_prefix.finish("冰冰收到，已读不回！。")
                 return
         
         # 检查私聊权限
@@ -678,11 +678,11 @@ if enable_command:
         if isinstance(event, GroupMessageEvent):
             group_id = event.group_id
             if not chat_enabled.get(group_id, default_chat_enabled):
-                await chat_command.finish("当前群聊的对话功能已关闭。")
+                await chat_command.finish("冰冰收到，已读不回！")
                 return
         
         if not await check_command_permission(event):
-            await chat_command.finish("您没有使用命令的权限")
+            await chat_command.finish("冰冰不认识你！才不听你话！")
             return
             
         if isinstance(event, PrivateMessageEvent) and not await check_private_chat(event):

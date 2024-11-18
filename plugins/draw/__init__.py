@@ -220,7 +220,7 @@ async def handle_draw(bot: Bot, event: MessageEvent):
     elif msg.startswith(DRAW_COMMAND):
         # 检查功能是否启用
         if not drawing_enabled:
-            await draw.finish("绘图功能当前已关闭")
+            await draw.finish("听不见···听不见···")
             return
             
         user_id = event.user_id
