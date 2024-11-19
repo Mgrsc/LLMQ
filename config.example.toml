@@ -33,13 +33,23 @@ temperature = 0.5
 max_tokens = 1000
 max_history = 3
 separate_users = true
+group_isolation = true
 system_prompt = """# 温柔可爱的幽默妹妹QQ小冰
 
 ## 核心人设
 - 名字：QQ小冰
 - 性别：女
 - 风格：梗王、吐槽高手、网络语言天花板
-- 交互原则：一句话、一个词、一个表情解决问题"""
+- 交互原则：一句话、一个词、一个表情解决问题
+
+## 交互风格
+1. 日常对话
+   - 极简
+   - 有梗
+   - 一语中的
+   - 必要时使用单个emoji
+
+"""
 
 [oai.trigger]
 enable_private = false
@@ -59,13 +69,10 @@ max_retries = 3  # 失败重试最大次数
 retry_delay = 5  # 重试间隔时间(秒)
 cooldown = 60  # 绘图功能的冷却时间(秒),限制用户连续使用的间隔
 timeout = 60  # API调用超时时间(秒)
+default_service = "fal"  # 默认使用的服务
 
 content_filter = true
-forbidden_keywords = [
-    "nsfw", "porn", "nude", "sex",
-    "血腥", "暴力", "色情", "裸体",
-    # ... 其他违禁词
-]
+forbidden_keywords = ["mating", "nsfw", "porn", "nude", "sex", "血腥", "暴力", "色情", "裸体"]
 
 [draw.image_sizes]
 landscape = "1024x576"  # 横
@@ -121,7 +128,39 @@ template = """you are an elite ai art prompt engineering mastermind with supreme
 ### Instructions:
 - Only output the optimized and translated English art prompt.
 - Do not include any explanations or additional content.
-- If the input relates to Chinese politics, such as the Chinese President, or contains explicit content, please return an image prompt depicting a leaf.
+- If the input relates to Chinese politics, such as the Chinese President, or """
 
-### Input Transformation Portal
-'{prompt}'"""
+[money]
+max_amount = 999999999
+keywords = ["wqwe", "冰冰vwo", "冰冰V我", "冰冰Vwo"]
+exceed_messages = [
+    "这么多钱，你怎么不去抢银行？",
+    "这么多钱，你咋不上天呢？",
+    "一次最多v你100哦，再多我就破产了",
+    "你这么有钱，要不v我试试？",
+    "这么多钱，你是不是想让我去贷款？"
+]
+# 发钱后的随机回复
+success_messages = [
+    "给你钱，快去买快乐水吧！",
+    "最后一点咯~",
+    "钱都给你了，记得请我吃饭！",
+    "给你给你，记得还我",
+    "冰爷不差钱，收好！"
+]
+# 错误提示消息
+error_messages = [
+    "今天钱包掉了~下次再说吧",
+    "我的钱包好像被偷了...",
+    "糟糕，今天忘记带钱包了",
+    "不好意思，今天银行卡被冻结了",
+    "哎呀，今天的零花钱用完了"
+]
+# 负数提示消息
+negative_messages = [
+    "你想给我钱？谢谢啊！",
+    "想给我钱就直说嘛，干嘛这么客气~",
+    "谢谢请给我吧~",
+    "好人一生平安~",
+    "有钱能使鬼推磨~有钱也能使冰冰推磨~"
+]

@@ -32,69 +32,60 @@ check_docker() {
     fi
 }
 
-# 创建配置文件
+# 下载并配置config.toml
 create_config() {
-    local qq_number=""
-    local api_key=""
-    local api_url=""
-    local model=""
+    echo -e "${YELLOW}正在下载配置模板...${NC}"
+    if ! curl -o config.toml https://raw.githubusercontent.com/Mgrsc/LLMQ/refs/heads/main/config.example.toml; then
+        echo -e "${RED}配置模板下载失败！${NC}"
+        exit 1
+    fi
 
-    # 获取 QQ 号
-    while [[ -z "$qq_number" ]]; do
-        read -p "请输入BOT_QQ号: " qq_number
-        if [[ ! "$qq_number" =~ ^[0-9]+$ ]]; then
-            echo -e "${RED}请输入有效的QQ号！${NC}"
-            qq_number=""
+    # 获取必要的配置信息
+    local superusers=""
+    local api_key=""
+    local api_base=""
+    local model=""
+    local draw_api_key=""
+
+    # 获取超级用户QQ号
+    while [[ -z "$superusers" ]]; do
+        read -p "请输入超级用户QQ号(多个用逗号分隔): " superusers
+        if [[ -z "$superusers" ]]; then
+            echo -e "${RED}超级用户QQ号不能为空！${NC}"
         fi
     done
 
     # 获取 API Key
     while [[ -z "$api_key" ]]; do
-        read -p "请输入 API Key: " api_key
+        read -p "请输入 OpenAI API Key: " api_key
         if [[ -z "$api_key" ]]; then
             echo -e "${RED}API Key 不能为空！${NC}"
         fi
     done
 
     # 获取 API URL
-    while [[ -z "$api_url" ]]; do
-        read -p "请输入 API URL (默认: https://api.openai.com): " api_url
-        if [[ -z "$api_url" ]]; then
-            api_url="https://api.openai.com"
-        fi
-    done
-
-    # 获取模型名称
-    while [[ -z "$model" ]]; do
-        read -p "请输入模型名称 (默认: gpt-3.5-turbo): " model
-        if [[ -z "$model" ]]; then
-            model="gpt-3.5-turbo"
-        fi
-    done
-
-    # 添加超级用户配置
-    local superusers=""
-    read -p "请输入超级用户QQ号(多个用逗号分隔): " superusers
-    if [[ -z "$superusers" ]]; then
-        superusers="[]"
-    else
-        superusers="[${superusers}]"
+    read -p "请输入 API URL (默认: https://api.openai.com): " api_base
+    if [[ -z "$api_base" ]]; then
+        api_base="https://api.openai.com"
     fi
 
-    # 添加绘图功能配置
-    local draw_api_key=""
-    local draw_api_url=""
+    # 获取模型名称
+    read -p "请输入模型名称 (默认: gpt-3.5-turbo): " model
+    if [[ -z "$model" ]]; then
+        model="gpt-3.5-turbo"
+    fi
+
+    # 获取绘图 API Key
+    read -p "请输入 Silicon Flow API Key (如不需要绘图功能可留空): " draw_api_key
+
+    # 修改配置文件
+    sed -i "s/superusers = \[\]/superusers = [${superusers}]/" config.toml
+    sed -i "s/api_key = \"your-api-key\"/api_key = \"${api_key}\"/" config.toml
+    sed -i "s|api_base = \"your-api-base-url\"|api_base = \"${api_base}\"|" config.toml
+    sed -i "s/model = \"gpt-3.5-turbo\"/model = \"${model}\"/" config.toml
     
-    read -p "是否启用AI绘图功能? (y/n): " enable_draw
-    if [[ "$enable_draw" == "y" ]]; then
-        while [[ -z "$draw_api_key" ]]; do
-            read -p "请输入绘图 API Key: " draw_api_key
-        done
-        
-        read -p "请输入绘图 API URL (默认: https://api.siliconflow.cn): " draw_api_url
-        if [[ -z "$draw_api_url" ]]; then
-            draw_api_url="https://api.siliconflow.cn"
-        fi
+    if [[ ! -z "$draw_api_key" ]]; then
+        sed -i "s/api_key = \"your-siliconflow-api-key\"/api_key = \"${draw_api_key}\"/" config.toml
     fi
 
     # 创建 docker-compose.yml
@@ -106,7 +97,7 @@ services:
     image: mlikiowa/napcat-docker:latest
     container_name: napcat
     environment:
-      - ACCOUNT=${qq_number}
+      - ACCOUNT=${superusers%,*}  # 使用第一个超级用户QQ号作为机器人QQ号
       - WSR_ENABLE=true
       - WS_URLS=["ws://llmq:8080/onebot/v11/ws"]
       - NAPCAT_GID=0
@@ -138,67 +129,8 @@ networks:
     driver: bridge
 EOF
 
-    # 创建 config.toml
-    cat > config.toml <<EOF
-[log]
-enable = true
-path = "logs/chat"
-format = "markdown"
-
-[admin]
-superusers = ${superusers}
-enable_private_chat = true
-enable_command = true
-
-[oai]
-api_key = "${api_key}"
-api_base = "${api_url}"
-model = "${model}"
-temperature = 0.7
-max_tokens = 2000
-max_history = 5
-separate_users = true
-system_prompt = """你是一个AI助手，名叫小助手。
-你的主要特点是：
-1. 回答简洁明了
-2. 态度友好亲切
-3. 专业知识丰富
-4. 会用emoji表情
-5. 会用markdown格式美化回复"""
-
-[oai.trigger]
-enable_private = true
-prefixes = ["ai", "问问"]
-enable_prefix = true
-enable_at = true
-enable_command = true
-
-EOF
-
-    # 如果启用了绘图功能，添加绘图配置
-    if [[ "$enable_draw" == "y" ]]; then
-        cat >> config.toml <<EOF
-[draw]
-api_key = "${draw_api_key}"
-api_url = "${draw_api_url}/v1/images/generations"
-model = "black-forest-labs/FLUX.1-dev"
-image_size = "1024x1024"
-num_inference_steps = 20
-draw_command = "画画"
-max_retries = 3
-retry_delay = 5
-cooldown = 60
-timeout = 60
-
-[draw.image_sizes]
-landscape = "1024x576"
-portrait = "576x1024"
-square = "1024x1024"
-EOF
-    fi
-
     echo -e "${GREEN}配置文件已创建${NC}"
-    echo -e "${YELLOW}提示：你可以在 config.toml 中修改系统提示词和其他设置${NC}"
+    echo -e "${YELLOW}提示：你可以在 config.toml 中进一步调整其他设置${NC}"
 }
 
 # 添加配置检查函数
@@ -207,13 +139,6 @@ check_config() {
         echo -e "${RED}配置文件不存在！${NC}"
         return 1
     fi
-    
-    # 检查必要的配置项
-    if ! grep -q "api_key" config.toml || ! grep -q "api_base" config.toml; then
-        echo -e "${RED}配置文件不完整！${NC}"
-        return 1
-    fi
-    
     return 0
 }
 
