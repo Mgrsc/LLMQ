@@ -820,10 +820,10 @@ async def handle_chat_settings(event: MessageEvent):
 
 # 修改 available_models 为推荐模型列表
 recommended_models = {
-    "gpt-3.5-turbo": "GPT-3.5 Turbo",
-    "gpt-4": "GPT-4",
+    "gpt-4o-mini": "GPT-4o-mini",
+    "gpt-4o": "GPT-4o",
     "grok-beta": "Grok Beta",
-    "claude-3-opus": "Claude 3 Opus",
-    "claude-3-sonnet": "Claude 3 Sonnet",
+    "claude-3-5-sonnet": "Claude 3.5 Sonnet",
+    "gemini-1.5-pro-latest": "Gemini 1.5 Pro",
     # 这里只是推荐列表，不限制实际可用模型
 }
