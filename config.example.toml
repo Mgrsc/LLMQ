@@ -59,6 +59,7 @@ enable_at = true
 enable_command = true
 
 [draw]
+enable = true  # 是否默认启用绘图功能
 api_key = "your-siliconflow-api-key"  # Silicon Flow API key
 api_url = "https://api.siliconflow.cn/v1/images/generations"
 model = "black-forest-labs/FLUX.1-dev"  # 使用的AI绘图模型

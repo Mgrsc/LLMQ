@@ -29,9 +29,6 @@ __plugin_meta__ = PluginMetadata(
     config=None,
 )
 
-# 在文件开头的配置部分之前添加全局变量声明
-drawing_enabled: bool = True  # 默认启用绘图功能
-
 # 读取配置文件
 config_file = Path("config.toml")
 if not config_file.exists():
@@ -39,8 +36,13 @@ if not config_file.exists():
 
 with open(config_file, "rb") as f:
     config = tomli.load(f)
-    draw_config = config["draw"]  # 改用 draw 配置
-    messages_config = config["messages"]  # 读取通用消息配置
+    draw_config = config["draw"]
+    messages_config = config["messages"]
+
+# 声明全局变量并从配置读取默认值
+drawing_enabled = draw_config.get("enable", False)  # 从配置文件读取默认值
+
+logger.info(f"绘图功能状态: {'启用' if drawing_enabled else '禁用'}")
 
 # 获取配置
 API_KEY = draw_config["api_key"]
@@ -76,7 +78,7 @@ drawing_lock = asyncio.Lock()
 SIZE_TYPE_MAP = {
     "横": "landscape",
     "竖": "portrait",
-    "正": "square"
+    "": "square"
 }
 
 # 修改服务类型映射
@@ -115,9 +117,6 @@ DRAWING_START_MESSAGES = draw_messages.get("drawing_start", [
     "冰冰拿起画笔开始画了..."
 ])
 
-# 用于存储绘图功能的启用状态
-drawing_enabled = True
-
 # 自定义规则：检查消息是否为绘图关命令
 def check_draw_commands() -> Rule:
     async def _check_draw_commands(event: MessageEvent) -> bool:
@@ -135,12 +134,13 @@ draw = on_message(
 
 @draw.handle()
 async def handle_draw(bot: Bot, event: MessageEvent):
-    global drawing_enabled
+    global drawing_enabled  # 确保使用全局变量
     msg = event.get_plaintext().strip()
     
     # 记录日志
     logger.info(f"收到消息 - 用户ID: {event.user_id}, 群ID: {event.group_id if isinstance(event, GroupMessageEvent) else 'private'}")
     logger.info(f"原始消息: {msg}")
+    logger.info(f"当前绘图功能状态: {'启用' if drawing_enabled else '禁用'}")
     
     # 处理 /draw 管理命令
     if msg.startswith("/draw"):
@@ -155,7 +155,7 @@ async def handle_draw(bot: Bot, event: MessageEvent):
         logger.info(f"管理命令参数: '{cmd_text}'")
         
         try:
-            # 没有参数时显示帮助信息
+            # 没有参数时示帮助信息
             if not cmd_text:
                 status = "开启" if drawing_enabled else "关闭"
                 help_text = f"""当前绘图功能状态：{status}
@@ -220,6 +220,7 @@ async def handle_draw(bot: Bot, event: MessageEvent):
     elif msg.startswith(DRAW_COMMAND):
         # 检查功能是否启用
         if not drawing_enabled:
+            logger.info("绘图功能已禁用，拒绝请求")
             await draw.finish("听不见···听不见···")
             return
             
@@ -422,7 +423,7 @@ async def optimize_prompt(prompt: str, max_retries: int = 3) -> str:
                         "中间层超时了...",
                         "优化提示词超时了，请稍后再试",
                         "处理时间太长了，换个时间再试吧",
-                        "服��器太忙了，稍后再来哦~"
+                        "服器太忙了，稍后再来哦~"
                     ]))
                     return ""
                 await asyncio.sleep(1)
