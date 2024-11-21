@@ -747,7 +747,7 @@ async def handle_chat_settings(event: MessageEvent):
             group_id = event.group_id
             isolation_status = "开启" if group_isolation.get(group_id, default_isolation) else "关闭"
             chat_status = "开启" if chat_enabled.get(group_id, default_chat_enabled) else "关闭"
-            current_model = recommended_models.get(model, model)  # 如果不在推荐列表中，直接显示模型名
+            current_model = recommended_models.get(model, model)
             
             await chat_settings.finish(f"""群聊设置状态：
 - 聊天功能：{chat_status}
@@ -774,7 +774,22 @@ async def handle_chat_settings(event: MessageEvent):
 /chat model <模型名称> - 切换对话模型（支持任意模型）""")
         return
     
-    # 修改模型切换命令处理
+    # 确保是群聊环境
+    if not isinstance(event, GroupMessageEvent):
+        await chat_settings.finish("此命令只能在群聊中使用。")
+        return
+        
+    group_id = event.group_id
+    
+    # 处理开关群聊功能
+    if args[0].lower() in ['true', 'false']:
+        enabled = args[0].lower() == 'true'
+        chat_enabled[group_id] = enabled
+        status = "开启" if enabled else "关闭"
+        await chat_settings.finish(f"已{status}群 {group_id} 的聊天功能。")
+        return
+    
+    # 处理模型切换命令
     if args[0] == "model":
         if len(args) < 2:
             model_list = "\n".join([f"- {name}: {desc}" for name, desc in recommended_models.items()])
@@ -798,20 +813,26 @@ async def handle_chat_settings(event: MessageEvent):
         old_model_display = recommended_models.get(old_model, old_model)
         new_model_display = recommended_models.get(new_model, new_model)
         
-        await chat_settings.finish(f"小冰从 {old_model_display} 重开为 {new_model_display}。\n冰爷闪亮登场！！！！。")
+        await chat_settings.finish(f"已将模型从 {old_model_display} 切换为 {new_model_display}。\n所有对话历史已清理。")
         return
     
-    # 其他现有的命令处理逻辑保持不变...
-    if args[0].lower() in ['true', 'false']:
-        # ... 现有的群聊开关逻辑 ...
-        pass
+    # 处理群聊隔离设置
+    if len(args) >= 2 and args[0] == "group":
+        if args[1].lower() in ['true', 'false']:
+            enabled = args[1].lower() == 'true'
+            group_isolation[group_id] = enabled
+            
+            # 清理当前群的历史记录
+            group_prefix = f"group_{group_id}"
+            for key in list(chat_history.keys()):
+                if key.startswith(group_prefix):
+                    chat_history.pop(key)
+            
+            status = "开启" if enabled else "关闭"
+            await chat_settings.finish(f"已{status}群 {group_id} 的对话隔离。\n该群的对话历史已清理。")
+            return
     
-    elif len(args) >= 2 and args[0] == "group":
-        # ... 现有的群聊隔离逻辑 ...
-        pass
-    
-    else:
-        await chat_settings.finish("""无效的命令。使用方法：
+    await chat_settings.finish("""无效的命令。使用方法：
 /chat true         - 开启群聊功能
 /chat false        - 关闭群聊功能
 /chat group true   - 开启群聊隔离
