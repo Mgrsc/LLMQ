@@ -431,7 +431,7 @@ async def handle_chat_common(event: MessageEvent, msg_text: str):
     
     # 检查私聊权限
     if isinstance(event, PrivateMessageEvent) and not private_chat_enabled:
-        return "私聊功能已禁用"
+        return "禁止私聊哦，加群685618193一起玩吧！也可以自己部署！"
     
     # 使用新的用户标识获取函数
     user_id = get_user_id(event)
@@ -545,7 +545,7 @@ async def handle_chat_common(event: MessageEvent, msg_text: str):
                 )
                 return error_msg
             
-            # 获取回复内容并清理
+            # 获���回复内容并清理
             try:
                 reply = result["choices"][0]["message"]["content"]
                 reply = clean_message(reply)  # 清理回复内容
@@ -657,7 +657,7 @@ if enable_prefix:
         # 检查私聊权限
         if isinstance(event, PrivateMessageEvent):
             if not await check_private_chat(event):
-                await chat_prefix.finish("私聊功能已禁用")
+                await chat_prefix.finish("禁止私聊哦，加群685618193一起玩吧！也可以自己部署！")
                 return
             
         msg_text = event.get_plaintext().strip()
@@ -686,7 +686,7 @@ if enable_command:
             return
             
         if isinstance(event, PrivateMessageEvent) and not await check_private_chat(event):
-            await chat_command.finish("私聊功能已禁用")
+            await chat_command.finish("禁止私聊哦，加群685618193一起玩吧！也可以自己部署！")
             return
             
         msg_text = str(event.get_message()).strip()
@@ -737,7 +737,7 @@ chat_settings = on_command(
 
 @chat_settings.handle()
 async def handle_chat_settings(event: MessageEvent):
-    global group_isolation, chat_enabled, model
+    global group_isolation, chat_enabled, model, default_isolation, default_chat_enabled
     
     msg_text = str(event.get_message()).strip()
     
@@ -750,16 +750,16 @@ async def handle_chat_settings(event: MessageEvent):
             current_model = recommended_models.get(model, model)
             
             await chat_settings.finish(f"""群聊设置状态：
-- 聊天功能：{chat_status}
-- 对话隔离：{isolation_status}
+- 聊天功能：{chat_status} (默认: {'开启' if default_chat_enabled else '关闭'})
+- 对话隔离：{isolation_status} (默认: {'开启' if default_isolation else '关闭'})
 - 当前模型：{current_model}
 
 使用方法：
-/chat true         - 开启群聊功能
-/chat false        - 关闭群聊功能
-/chat group true   - 开启群聊隔离（每个人独立对话）
-/chat group false  - 关闭群聊隔离（群内共享对话）
-/chat model <模型名称> - 切换对话模型（支持任意模型）""")
+/chat true/false         - 开启/关闭当前群聊功能
+/chat all true/false    - 开启/关闭所有群聊功能
+/chat group true/false   - 开启/关闭当前群隔离
+/chat group all true/false - 开启/关闭所有群隔离
+/chat model <模型名称>    - 切换对话模型""")
         else:
             await chat_settings.finish("此命令只能在群聊中使用。")
         return
@@ -767,11 +767,11 @@ async def handle_chat_settings(event: MessageEvent):
     args = msg_text.split()[1:]
     if not args:
         await chat_settings.finish("""使用方法：
-/chat true         - 开启群聊功能
-/chat false        - 关闭群聊功能
-/chat group true   - 开启群聊隔离
-/chat group false  - 关闭群聊隔离
-/chat model <模型名称> - 切换对话模型（支持任意模型）""")
+/chat true/false         - 开启/关闭当前群聊功能
+/chat all true/false    - 开启/关闭所有群聊功能
+/chat group true/false   - 开启/关闭当前群隔离
+/chat group all true/false - 开启/关闭所有群隔离
+/chat model <模型名称>    - 切换对话模型""")
         return
     
     # 确保是群聊环境
@@ -781,7 +781,16 @@ async def handle_chat_settings(event: MessageEvent):
         
     group_id = event.group_id
     
-    # 处理开关群聊功能
+    # 处理全局开关群聊功能
+    if args[0] == "all" and len(args) > 1 and args[1].lower() in ['true', 'false']:
+        enabled = args[1].lower() == 'true'
+        default_chat_enabled = enabled
+        chat_enabled.clear()  # 清除所有单独设置
+        status = "开启" if enabled else "关闭"
+        await chat_settings.finish(f"已{status}所有群的聊天功能。")
+        return
+    
+    # 处理单群开关群聊功能
     if args[0].lower() in ['true', 'false']:
         enabled = args[0].lower() == 'true'
         chat_enabled[group_id] = enabled
@@ -817,7 +826,25 @@ async def handle_chat_settings(event: MessageEvent):
         return
     
     # 处理群聊隔离设置
-    if len(args) >= 2 and args[0] == "group":
+    if args[0] == "group":
+        if len(args) < 2:
+            await chat_settings.finish("请指定是否开启群聊隔离 (true/false)")
+            return
+            
+        # 处理全局群聊隔离设置
+        if args[1] == "all" and len(args) > 2 and args[2].lower() in ['true', 'false']:
+            enabled = args[2].lower() == 'true'
+            default_isolation = enabled
+            group_isolation.clear()  # 清除所有单独设置
+            
+            # 清理所有群的历史记录
+            chat_history.clear()
+            
+            status = "开启" if enabled else "关闭"
+            await chat_settings.finish(f"已{status}所有群的对话隔离。\n所有群的对话历史已清理。")
+            return
+            
+        # 处理单群隔离设置
         if args[1].lower() in ['true', 'false']:
             enabled = args[1].lower() == 'true'
             group_isolation[group_id] = enabled
@@ -833,11 +860,11 @@ async def handle_chat_settings(event: MessageEvent):
             return
     
     await chat_settings.finish("""无效的命令。使用方法：
-/chat true         - 开启群聊功能
-/chat false        - 关闭群聊功能
-/chat group true   - 开启群聊隔离
-/chat group false  - 关闭群聊隔离
-/chat model <模型名称> - 切换对话模型（支持任意模型）""")
+/chat true/false         - 开启/关闭当前群聊功能
+/chat all true/false    - 开启/关闭所有群聊功能
+/chat group true/false   - 开启/关闭当前群隔离
+/chat group all true/false - 开启/关闭所有群隔离
+/chat model <模型名称>    - 切换对话模型""")
 
 # 修改 available_models 为推荐模型列表
 recommended_models = {
