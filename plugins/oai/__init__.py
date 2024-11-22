@@ -422,6 +422,15 @@ message_config = config.get("messages", {})
 empty_input_msg = message_config.get("empty_input", "请输入有效的消息内容")
 empty_at_msg = message_config.get("empty_at", "Hi，我在呢！有什么可以帮你的吗？")
 
+# 在文件开头导入部分添加
+import asyncio
+from typing import List
+
+# 在读取配置部分添加
+max_retries = int(oai_config.get("max_retries", 3))
+retry_delay = float(oai_config.get("retry_delay", 2))
+retry_codes = oai_config.get("retry_codes", [429, 500, 502, 503, 504])
+
 async def handle_chat_common(event: MessageEvent, msg_text: str):
     # 检查群聊功能是否开启
     if isinstance(event, GroupMessageEvent):
@@ -485,30 +494,63 @@ async def handle_chat_common(event: MessageEvent, msg_text: str):
             )
             return error_msg
         
-        # 发送请求
+        # 发送请求(添加重试逻辑)
         import httpx
         async with httpx.AsyncClient() as client:
-            try:
-                response = await client.post(
-                    f"{openai.base_url}/v1/chat/completions",
-                    headers=headers,
-                    json=data,
-                    timeout=30.0
-                )
-            except httpx.TimeoutException:
-                error_msg = "请求超时，请稍后重试"
-                await save_chat_log(
-                    str(event.user_id), user_name, group_id, group_name,
-                    msg_text, "", error_msg
-                )
-                return error_msg
-            except httpx.NetworkError:
-                error_msg = "网络错误，请检查网络连接"
-                await save_chat_log(
-                    str(event.user_id), user_name, group_id, group_name,
-                    msg_text, "", error_msg
-                )
-                return error_msg
+            for retry in range(max_retries):
+                try:
+                    response = await client.post(
+                        f"{openai.base_url}/v1/chat/completions",
+                        headers=headers,
+                        json=data,
+                        timeout=30.0
+                    )
+                    
+                    # 如果请求成功,跳出重试循环
+                    if response.status_code == 200:
+                        break
+                        
+                    # 如果状态码在重试列表中,等待后重试
+                    if response.status_code in retry_codes:
+                        if retry < max_retries - 1:  # 如果不是最后一次重试
+                            wait_time = retry_delay * (retry + 1)  # 递增等待时间
+                            print(f"请求失败(状态码:{response.status_code}),{wait_time}秒后重试({retry + 1}/{max_retries})")
+                            await asyncio.sleep(wait_time)
+                            continue
+                            
+                    # 其他错误直接返回错误信息
+                    error_msg = f"API 请求失败：{response.status_code} - {response.text}"
+                    await save_chat_log(
+                        str(event.user_id), user_name, group_id, group_name,
+                        msg_text, "", error_msg
+                    )
+                    return error_msg
+                        
+                except httpx.TimeoutException:
+                    if retry < max_retries - 1:  # 如果不是最后一次重试
+                        wait_time = retry_delay * (retry + 1)
+                        print(f"请求超时,{wait_time}秒后重试({retry + 1}/{max_retries})")
+                        await asyncio.sleep(wait_time)
+                        continue
+                    error_msg = "请求超时,请稍后重试"
+                    await save_chat_log(
+                        str(event.user_id), user_name, group_id, group_name,
+                        msg_text, "", error_msg
+                    )
+                    return error_msg
+                    
+                except httpx.NetworkError:
+                    if retry < max_retries - 1:  # 如果不是最后一次重试
+                        wait_time = retry_delay * (retry + 1)
+                        print(f"网络错误,{wait_time}秒后重试({retry + 1}/{max_retries})")
+                        await asyncio.sleep(wait_time)
+                        continue
+                    error_msg = "网络错误,请检查网络连接"
+                    await save_chat_log(
+                        str(event.user_id), user_name, group_id, group_name,
+                        msg_text, "", error_msg
+                    )
+                    return error_msg
             
             if response.status_code != 200:
                 error_msg = f"API 请求失败：{response.status_code} - {response.text}"
@@ -545,7 +587,7 @@ async def handle_chat_common(event: MessageEvent, msg_text: str):
                 )
                 return error_msg
             
-            # 获���回复内容并清理
+            # 获回复内容并清理
             try:
                 reply = result["choices"][0]["message"]["content"]
                 reply = clean_message(reply)  # 清理回复内容
