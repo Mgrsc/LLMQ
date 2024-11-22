@@ -166,7 +166,7 @@ async def handle_command(event: MessageEvent):
         global separate_users
         if subcmd == "on":
             separate_users = True
-            # 清理当前群的历史记录
+            # 清当前群的历史记录
             group_prefix = f"group_{event.group_id}"
             for key in list(chat_history.keys()):
                 if key.startswith(group_prefix):
@@ -299,7 +299,7 @@ async def save_chat_log(
             meta.update({"chat_type": "private"})
 
         if log_format == "markdown":
-            # 生成更清晰的时间戳标题
+            # 生成更清晰的时戳标题
             content = f"""
 ## {time_str} - {'群聊' if group_id else '私聊'}对话
 
@@ -346,7 +346,7 @@ async def save_chat_log(
 ========== {time_str} - {'群聊' if group_id else '私聊'}对话 ==========
 时间：{date_str} {time_str}
 用户：{user_name} ({user_id})
-{"群组：" + group_name + f" ({group_id})" if group_id else "对话类型：私聊"}
+{"群：" + group_name + f" ({group_id})" if group_id else "对话类型：私聊"}
 
 [提问]
 {question.strip() if question.strip() else '(空消息)'}
@@ -395,27 +395,11 @@ async def save_chat_log(
     except Exception as e:
         print(f"日志记录失败：{e}")
 
-# 添加消清理函数
+# 修改消息清理函数
 def clean_message(text: str) -> str:
     if not text:
         return text
-    
-    # 移除开头的空白字符和换行
-    text = text.lstrip()
-    
-    # 移除结尾的空白字符和换行
-    text = text.rstrip()
-    
-    # 处理多余的换行（连续的换行改为最多两个）
-    text = re.sub(r'\n{3,}', '\n\n', text)
-    
-    # 处理行中间的多余空格
-    text = re.sub(r'[ \t]+', ' ', text)
-    
-    # 确保段落之间只有一个换行
-    text = re.sub(r'\n[ \t]*\n[ \t]*', '\n\n', text)
-    
-    return text
+    return text.strip()
 
 # 读取自定义消息配置
 message_config = config.get("messages", {})
@@ -754,7 +738,7 @@ async def check_private_chat(event: PrivateMessageEvent) -> bool:
         return admin_private_chat
     return private_chat_enabled
 
-# 修改命令权限检查
+# 修改令权限检查
 async def check_command_permission(event: MessageEvent) -> bool:
     if is_superuser(event):
         return admin_command
@@ -848,7 +832,7 @@ async def handle_chat_settings(event: MessageEvent):
 推荐模型列表：
 {model_list}
 
-当前模型：{recommended_models.get(model, model)}
+当前模��：{recommended_models.get(model, model)}
 
 注意：可以使用任何模型名称，不限于推荐列表。""")
             return
@@ -882,7 +866,7 @@ async def handle_chat_settings(event: MessageEvent):
             # 清理所有群的历史记录
             chat_history.clear()
             
-            status = "开启" if enabled else "关闭"
+            status = "开���" if enabled else "关闭"
             await chat_settings.finish(f"已{status}所有群的对话隔离。\n所有群的对话历史已清理。")
             return
             
